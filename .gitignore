@@ -1,0 +1,14 @@
+# Build output — don't commit dist, deploy index.html directly to repo root
+dist/
+
+# Python
+__pycache__/
+*.pyc
+.env
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
