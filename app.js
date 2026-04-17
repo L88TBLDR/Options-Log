@@ -639,29 +639,18 @@ function setHistPeriod(v){
 
 function renderHistory(){
   const tickers=[...new Set(state.trades.map(t=>t.ticker))];
-  // History filter — minimal segmented tabs per row
-  const seg=(opts,cur,fn)=>`<div style="display:flex;background:var(--bg3);border-radius:22px;padding:3px;gap:0">`+
-    opts.map(([v,l])=>`<button onclick="${fn}(this,'${v}')" style="flex:1;padding:5px 0;font-size:12px;font-weight:${cur===v?700:500};border:none;border-radius:19px;cursor:pointer;background:${cur===v?'var(--blue)':'transparent'};color:${cur===v?'#051629':'var(--text2)'};transition:all .15s;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis">${l}</button>`).join('')+
-    `</div>`;
-
-  const periodOpts=[['all','All'],['thismonth','This mo.'],['lastmonth','Last mo.'],['thisyear','This yr'],['custom','Custom']];
-  const tickerOpts=[['','All'],...tickers.map(t=>[t,t])];
-  const typeOpts=[['','All'],['CSP','CSP'],['CC','CC'],['Diagonal','Diag'],['Stock Sale','Stock']];
-  const outcomeOpts=[['','All'],['Open','Open'],['Expired','Exp.'],['Closed','Closed'],['Assigned','Asgnd'],['Sold','Sold']];
-
-  const filterLabel=t=>`<div style="font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px">${t}</div>`;
-
+  const curPeriod=histFilters.period||'all';
+  const hasClear=!!(histFilters.ticker||histFilters.type||histFilters.outcome);
+  const periodChips=[['all','All'],['thismonth','This mo.'],['lastmonth','Last mo.'],['thisyear','This yr'],['custom','Custom']]
+    .map(([v,l])=>`<button class="hist-chip${curPeriod===v?' active':''}" onclick="setHistPeriod('${v}')">${l}</button>`).join('');
+  const mkOpt=(v,l,cur)=>`<option value="${v}"${cur===v?' selected':''}>${l}</option>`;
+  const tickerSel=`<select class="hist-sel${histFilters.ticker?' on':''}" onchange="histFilters.ticker=this.value;renderHistory()">${mkOpt('','Ticker',histFilters.ticker)}${tickers.map(t=>mkOpt(t,t,histFilters.ticker)).join('')}</select>`;
+  const typeSel=`<select class="hist-sel${histFilters.type?' on':''}" onchange="histFilters.type=this.value;renderHistory()">${mkOpt('','Type',histFilters.type)}${['CSP','CC','PMCC','Diagonal','Bull Put','Bear Call','Stock Sale'].map(t=>mkOpt(t,t,histFilters.type)).join('')}</select>`;
+  const outcomeSel=`<select class="hist-sel${histFilters.outcome?' on':''}" onchange="histFilters.outcome=this.value;renderHistory()">${mkOpt('','Result',histFilters.outcome)}${['Open','Expired','Closed','Assigned','Sold'].map(o=>mkOpt(o,o,histFilters.outcome)).join('')}</select>`;
   document.getElementById('hist-filters').innerHTML=
-    `<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:4px">` +
-    `<div>${filterLabel('Period')}${seg(periodOpts,histFilters.period||'all','setHistPeriodChip')}</div>` +
-    (histFilters.period==='custom'?`<div style="display:flex;gap:6px">
-      <input type="date" value="${histFilters.dateFrom}" onchange="histFilters.dateFrom=this.value;renderHistory()" style="flex:1;font-size:13px;padding:6px 8px">
-      <input type="date" value="${histFilters.dateTo}" onchange="histFilters.dateTo=this.value;renderHistory()" style="flex:1;font-size:13px;padding:6px 8px">
-    </div>`:'') +
-    `<div>${filterLabel('Ticker')}${seg(tickerOpts,histFilters.ticker,'setHistTickerChip')}</div>` +
-    `<div>${filterLabel('Type')}${seg(typeOpts,histFilters.type,'setHistTypeChip')}</div>` +
-    `<div>${filterLabel('Result')}${seg(outcomeOpts,histFilters.outcome,'setHistOutcomeChip')}</div>` +
-    `</div>`;
+    `<div class="hist-period-row">${periodChips}</div>`+
+    (curPeriod==='custom'?`<div class="hist-date-row"><input type="date" value="${histFilters.dateFrom}" onchange="histFilters.dateFrom=this.value;renderHistory()"><input type="date" value="${histFilters.dateTo}" onchange="histFilters.dateTo=this.value;renderHistory()"></div>`:'')+
+    `<div class="hist-selects${hasClear?' has-clear':''}">${tickerSel}${typeSel}${outcomeSel}${hasClear?`<button class="hist-clear" onclick="histFilters.ticker='';histFilters.type='';histFilters.outcome='';renderHistory()">✕</button>`:''}</div>`;
 
   let trades=[...state.trades];
   if(histFilters.ticker)trades=trades.filter(t=>t.ticker===histFilters.ticker);
