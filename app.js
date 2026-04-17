@@ -13,6 +13,7 @@ let state={
       {id:'sgd',label:'SGD Account',currency:'SGD',amount:0,enabled:false},
     ],
     fxRates:{USDSGD:1.34},marginPct:20,
+    rebates:[],trueCapital:29122.84,
     fees:{preset:'tiger-ultra',gst:true,gstRate:9,includePassThrough:true,orf:0.012,occ:0.025,finraTaf:0.00329,commissionRate:0.35,platformRate:0.30,minOrderFee:0,minPlatformFee:0,model:'perContract',stockRate:0},
     logFields:['strike','premium','contracts','iv','delta','notes'],
     histCols:[
@@ -44,6 +45,8 @@ function load(){
         if(!state.settings.monthlyTargetMode)state.settings.monthlyTargetMode='amount';
         if(!state.settings.capital)state.settings.capital=[{id:'usd',label:'USD Account',currency:'USD',amount:0,enabled:true},{id:'sgd',label:'SGD Account',currency:'SGD',amount:0,enabled:false}];
         state.settings.fees={...state.settings.fees,...(sv.settings.fees||{})};
+        if(!state.settings.rebates)state.settings.rebates=[];
+        if(state.settings.trueCapital==null)state.settings.trueCapital=0;
       }
     }else{state.trades=SEED;state.nextId=15;save();}
   }catch(e){state.trades=SEED;state.nextId=15;}
@@ -154,6 +157,9 @@ function totalCapitalUSD(){
   return state.settings.capital.filter(c=>c.enabled&&c.amount>0).reduce((s,c)=>s+(c.currency==='USD'?c.amount:c.amount/fx),0);
 }
 
+function totalRebates(){return state.settings.rebates.reduce((s,r)=>s+(r.amount||0),0);}
+function totalRebatesByType(type){return state.settings.rebates.filter(r=>r.type===type).reduce((s,r)=>s+(r.amount||0),0);}
+
 // ═══════════════════ TAB ═══════════════════
 function switchTab(name){
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
@@ -230,6 +236,7 @@ function renderDashboard(){
   `;
 
   renderCapitalWidget(open);
+  renderPromotionsWidget();
 
   // Open positions with swipe-to-delete
   document.getElementById('dash-open').innerHTML=open.length
@@ -372,6 +379,43 @@ function renderCapitalWidget(openTrades){
   `;
 }
 
+function renderPromotionsWidget(){
+  const promoEl=document.getElementById('promo-card');if(!promoEl)return;
+  const rebates=state.settings.rebates||[];
+  const totalReb=totalRebates();
+  const orderReb=totalRebatesByType('order');
+  const couponReb=totalRebatesByType('coupon');
+  const trueCap=state.settings.trueCapital||0;
+  if(!totalReb&&!trueCap){promoEl.style.display='none';return;}
+  promoEl.style.display='block';
+  const closed=state.trades.filter(t=>t.status==='closed');
+  const totalFees=closed.reduce((s,t)=>s+(t.feesTotal||0),0);
+  const netFeesBenefit=totalReb-totalFees;
+  const benefitColor=netFeesBenefit>=0?'var(--pos)':'var(--neg)';
+  promoEl.querySelector('#promo-body').innerHTML=`
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
+      <div style="background:var(--bg3);border-radius:var(--radius);padding:10px;border:0.5px solid var(--border)">
+        <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">True capital</div>
+        <div style="font-size:15px;font-weight:700">$${trueCap.toLocaleString('en-US',{maximumFractionDigits:0})}</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:2px">own funds</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:var(--radius);padding:10px;border:0.5px solid var(--border)">
+        <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Promotions</div>
+        <div style="font-size:15px;font-weight:700;color:var(--teal)">+$${totalReb.toFixed(2)}</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:2px">${rebates.length} entries</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:var(--radius);padding:10px;border:0.5px solid var(--border)">
+        <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Net fee benefit</div>
+        <div style="font-size:15px;font-weight:700;color:${benefitColor}">${netFeesBenefit>=0?'+':'-'}$${Math.abs(netFeesBenefit).toFixed(2)}</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:2px">rebates − fees</div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:11px;color:var(--text3)">Order rebates <span style="color:var(--teal);font-weight:700">$${orderReb.toFixed(2)}</span> · Coupons <span style="color:var(--teal);font-weight:700">$${couponReb.toFixed(2)}</span></div>
+      <button class="btn-sm" onclick="openSettingsSub('rebates')">Manage</button>
+    </div>`;
+}
+
 // ═══════════════════ ANALYTICS ═══════════════════
 function renderAnalytics(){
   const closed=state.trades.filter(t=>t.status==='closed');
@@ -393,6 +437,13 @@ function renderAnalytics(){
   const avgAroc=arocsV.length?(arocsV.reduce((s,v)=>s+v,0)/arocsV.length).toFixed(1):0;
   const avgDTE=opts.length?Math.round(opts.reduce((s,t)=>s+t.dte,0)/opts.length):0;
 
+  const allClosedNet=closed.reduce((s,t)=>s+(t.pnlNet!=null?t.pnlNet:0),0);
+  const rebTotal=totalRebates();
+  const effectiveNet=allClosedNet+rebTotal;
+  const trueCap=state.settings.trueCapital||0;
+  const trueROC=trueCap>0?((allClosedNet/trueCap)*100).toFixed(2):null;
+  const effectiveROC=trueCap>0?((effectiveNet/trueCap)*100).toFixed(2):null;
+
   document.getElementById('ana-cards').innerHTML=`
     <div class="metric"><div class="metric-label">Prem efficiency</div><div class="metric-value">${premEff}%</div><div class="metric-sub">realized ÷ collected</div></div>
     <div class="metric"><div class="metric-label">Cap efficiency</div><div class="metric-value pos">${capEffTot}%</div><div class="metric-sub">P&amp;L ÷ collateral</div></div>
@@ -400,6 +451,21 @@ function renderAnalytics(){
     <div class="metric"><div class="metric-label">Avg DTE open</div><div class="metric-value">${avgDTE}d</div><div class="metric-sub">options only</div></div>
     <div class="metric"><div class="metric-label">Monthly ROC</div><div class="metric-value ${monthlyROC!=null&&monthlyROC>=0?'pos':'neg'}">${monthlyROC!=null?monthlyROC+'%':'—'}</div><div class="metric-sub">net P&amp;L ÷ collateral</div></div>
   `;
+  if(rebTotal>0||trueCap>0){
+    const rebCard=document.getElementById('ana-promo-card');
+    if(rebCard){
+      rebCard.style.display='block';
+      rebCard.innerHTML=`<div class="card-title">True vs effective returns</div>
+        <div class="stat-row"><div style="font-size:13px;color:var(--text2)">Trading P&L (net of fees)</div><div style="font-size:14px;font-weight:700" class="${allClosedNet>=0?'pos':'neg'}">${fmtSgn(allClosedNet)}</div></div>
+        <div class="stat-row"><div style="font-size:13px;color:var(--text2)">+ Promotions &amp; rebates</div><div style="font-size:14px;font-weight:700;color:var(--teal)">+$${rebTotal.toFixed(2)}</div></div>
+        <div class="stat-row" style="border-bottom:none"><div style="font-size:13px;font-weight:700">Effective total return</div><div style="font-size:16px;font-weight:700" class="${effectiveNet>=0?'pos':'neg'}">${fmtSgn(effectiveNet)}</div></div>
+        ${trueCap>0?`<div style="margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border);display:flex;gap:16px">
+          <div><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">ROC (trading)</div><div style="font-size:14px;font-weight:700" class="${parseFloat(trueROC)>=0?'pos':'neg'}">${trueROC}%</div></div>
+          <div><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">ROC (effective)</div><div style="font-size:14px;font-weight:700;color:var(--teal)">${effectiveROC}%</div></div>
+          <div><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Capital</div><div style="font-size:14px;font-weight:700">$${trueCap.toLocaleString('en-US',{maximumFractionDigits:0})}</div></div>
+        </div>`:''}`;
+    }
+  }
 
   const tickers=[...new Set(opts.map(t=>t.ticker))];
   const tC=[C.blue,C.teal,C.amber,C.coral,C.purple];
@@ -742,6 +808,19 @@ function renderSettingsMain(){
       <div class="s-row-r"><span class="s-chev">›</span></div>
     </div>
   </div>
+  <p class="s-section-label">Promotions</p>
+  <div class="s-group">
+    <div class="s-row" onclick="openSettingsSub('capital')">
+      <div class="s-row-l"><div class="s-icon" style="background:rgba(93,202,165,0.12)"><svg viewBox="0 0 24 24" fill="none" stroke="#5DCAA5" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
+      <div><div class="s-rtitle">True capital</div><div class="s-rsub">$${(state.settings.trueCapital||0).toLocaleString('en-US',{maximumFractionDigits:2})}</div></div></div>
+      <div class="s-row-r"><span class="s-chev">›</span></div>
+    </div>
+    <div class="s-row" onclick="openSettingsSub('rebates')">
+      <div class="s-row-l"><div class="s-icon" style="background:rgba(93,202,165,0.12)"><svg viewBox="0 0 24 24" fill="none" stroke="#5DCAA5" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 100 4h4a2 2 0 110 4H8"/><line x1="12" y1="6" x2="12" y2="8"/><line x1="12" y1="16" x2="12" y2="18"/></svg></div>
+      <div><div class="s-rtitle">Rebates &amp; bonuses</div><div class="s-rsub">${(state.settings.rebates||[]).length} entries · $${totalRebates().toFixed(2)} total</div></div></div>
+      <div class="s-row-r"><span class="s-chip chip-green">+$${totalRebates().toFixed(2)}</span><span class="s-chev">›</span></div>
+    </div>
+  </div>
   <p class="s-section-label">Data</p>
   <div class="s-group">
     <div class="s-row" onclick="openSettingsSub('data')">
@@ -810,6 +889,55 @@ function renderSettingsSub(id,el){
           oninput="updateCapBalance(parseFloat(this.value)||0)">
       </div>
     </div></div>`;
+  }else if(id==='capital'){
+    const cap=state.settings.trueCapital||0;
+    el.innerHTML=S_BACK+`<div class="sub-title">True capital</div>
+    <div class="sub-desc">Your actual funds deposited — excluding any broker rebates or bonuses. Used as a reference to calculate true return on capital.</div>
+    <div class="s-group"><div style="padding:20px 16px 16px">
+      <div class="field" style="margin-bottom:16px">
+        <label>Total own capital deposited (USD)</label>
+        <input type="number" id="cap-true-input" value="${cap||''}" placeholder="e.g. 29122.84" step="0.01"
+          oninput="state.settings.trueCapital=parseFloat(this.value)||0;save();renderPromotionsWidget()">
+      </div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.6">
+        Include all deposits converted to USD at the FX rate you received.<br>
+        <span style="color:var(--text3)">E.g. SGD 16,000 → USD 12,419 + USD 16,703.76 direct = USD 29,122.84</span>
+      </div>
+    </div></div>`;
+  }else if(id==='rebates'){
+    const rebates=state.settings.rebates||[];
+    const orderTotal=totalRebatesByType('order');const couponTotal=totalRebatesByType('coupon');
+    const grandTotal=totalRebates();
+    const totalFees=state.trades.filter(t=>t.status==='closed').reduce((s,t)=>s+(t.feesTotal||0),0);
+    el.innerHTML=S_BACK+`<div class="sub-title">Rebates &amp; bonuses</div>
+    <div class="sub-desc">Track new account rebates and broker promotions separately from trading P&L. These are temporary and will not recur after the promo period.</div>
+    <div class="s-group"><div style="padding:12px 16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">
+        <div style="text-align:center"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Order rebates</div><div style="font-size:16px;font-weight:700;color:var(--teal)">$${orderTotal.toFixed(2)}</div></div>
+        <div style="text-align:center"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Coupons</div><div style="font-size:16px;font-weight:700;color:var(--teal)">$${couponTotal.toFixed(2)}</div></div>
+        <div style="text-align:center"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Net vs fees</div><div style="font-size:16px;font-weight:700;color:${grandTotal>=totalFees?'var(--pos)':'var(--neg)'}">${grandTotal>=totalFees?'+':'-'}$${Math.abs(grandTotal-totalFees).toFixed(2)}</div></div>
+      </div>
+    </div></div>
+    <div class="s-group"><div style="padding:14px 16px">
+      <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Add entry</div>
+      <div class="form-2" style="margin-bottom:8px">
+        <div class="field" style="margin-bottom:0"><label>Date</label><input type="date" id="reb-date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="field" style="margin-bottom:0"><label>Type</label><select id="reb-type"><option value="order">Order rebate</option><option value="coupon">Coupon rebate</option><option value="bonus">Cash bonus</option><option value="other">Other</option></select></div>
+      </div>
+      <div class="form-2" style="margin-bottom:8px">
+        <div class="field" style="margin-bottom:0"><label>Amount (USD)</label><input type="number" id="reb-amount" placeholder="10.00" step="0.01" min="0"></div>
+        <div class="field" style="margin-bottom:0"><label>Notes</label><input type="text" id="reb-notes" placeholder="optional"></div>
+      </div>
+      <button class="btn btn-blue" onclick="addRebate()">Add rebate</button>
+    </div></div>
+    ${rebates.length?`<div class="s-group"><div style="padding:4px 0">${[...rebates].reverse().map((r,ri)=>{
+      const idx=rebates.length-1-ri;
+      const typeLabels={order:'Order rebate',coupon:'Coupon rebate',bonus:'Cash bonus',other:'Other'};
+      return`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:0.5px solid var(--border)">
+        <div><div style="font-size:13px;font-weight:600;color:var(--teal)">+$${(r.amount||0).toFixed(2)}</div>
+        <div style="font-size:11px;color:var(--text2)">${typeLabels[r.type]||r.type} · ${r.date}${r.notes?' · '+esc(r.notes):''}</div></div>
+        <button class="btn-sm btn-del" onclick="deleteRebate(${idx})">Del</button>
+      </div>`;}).join('')}</div></div>`:'<div class="empty">No entries yet</div>'}`;
   }else if(id==='fees'){
     renderFeeSubScreen(el);
   }else if(id==='logfields'){
@@ -898,6 +1026,23 @@ function dropCol(e){
   if(_dragIdx===null||_dragIdx===to)return;
   const cols=state.settings.histCols;const moved=cols.splice(_dragIdx,1)[0];cols.splice(to,0,moved);_dragIdx=null;
   save();renderSettingsSub('histcols',document.getElementById('s-sub-view'));
+}
+function addRebate(){
+  const date=document.getElementById('reb-date')?.value;
+  const amount=parseFloat(document.getElementById('reb-amount')?.value)||0;
+  const type=document.getElementById('reb-type')?.value||'order';
+  const notes=document.getElementById('reb-notes')?.value||'';
+  if(!amount){toast('Enter an amount','err');return;}
+  if(!state.settings.rebates)state.settings.rebates=[];
+  state.settings.rebates.push({id:Date.now(),date,amount,type,notes});
+  save();toast('+$'+amount.toFixed(2)+' rebate added');
+  renderSettingsSub('rebates',document.getElementById('s-sub-view'));
+}
+function deleteRebate(idx){
+  if(!confirm('Remove this rebate entry?'))return;
+  state.settings.rebates.splice(idx,1);save();
+  renderSettingsSub('rebates',document.getElementById('s-sub-view'));
+  renderPromotionsWidget();
 }
 function confirmClearAll(){if(!confirm('Delete ALL trades and reset? Cannot be undone.'))return;localStorage.removeItem(SK);state.trades=[];state.nextId=1;save();toast('All data cleared','warn');renderDashboard();renderSettingsSub('data',document.getElementById('s-sub-view'));}
 

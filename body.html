@@ -10,6 +10,7 @@
 <div id="dashboard" class="panel active">
   <div class="grid-2" id="sum-cards"></div>
   <div class="card" id="capital-card"><div class="card-title">Capital utilisation</div><div id="capital-body"></div></div>
+  <div class="card" id="promo-card" style="display:none;border-color:rgba(93,202,165,0.2)"><div class="card-title" style="display:flex;justify-content:space-between;align-items:center"><span>Promotions &amp; capital</span><span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:rgba(93,202,165,0.12);color:var(--teal)">New account</span></div><div id="promo-body"></div></div>
   <div class="card"><div class="card-title">Open positions</div><div id="dash-open"></div></div>
   <div class="card">
     <div class="card-title">Monthly net P&amp;L</div>
@@ -24,6 +25,7 @@
 <!-- ANALYTICS -->
 <div id="analytics" class="panel">
   <div class="grid-2" id="ana-cards"></div>
+  <div class="card" id="ana-promo-card" style="display:none;border-color:rgba(93,202,165,0.2)"></div>
   <div class="card"><div class="card-title">Capital &amp; premium efficiency by ticker</div><div id="cap-rows"></div></div>
   <div class="card"><div class="card-title">P&amp;L by ticker</div><div class="legend" id="leg-ticker"></div><div class="chart-wrap"><canvas id="c-ticker"></canvas></div></div>
   <div class="card"><div class="card-title">Strategy mix</div><div class="legend" id="leg-strat"></div><div class="chart-wrap" style="height:150px"><canvas id="c-strat"></canvas></div></div>
