@@ -170,7 +170,7 @@ function renderDashboard(){
   const targetPct=effectiveTarget>0?Math.max(0,(thisMonthNet/effectiveTarget)*100):0;  // can exceed 100
   const targetColor=targetPct>=100?C.pos:targetPct>=60?C.amber:C.blue;
   const monthLabel=now.toLocaleString('default',{month:'short',year:'2-digit'});
-  const targetLabel=targetMode==='pct'?targetAmt+'% of equity ($'+effectiveTarget.toFixed(0)+')':'$'+effectiveTarget.toFixed(0);
+  const targetLabel='$'+effectiveTarget.toFixed(0);
 
   document.getElementById('hdr-sub').textContent=opts.length+' trades · '+open.length+' open';
   document.getElementById('hdr-badge').textContent=(grossPnl>=0?'+':'')+fmt(grossPnl,0);
