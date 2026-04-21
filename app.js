@@ -1024,32 +1024,38 @@ function renderFeeSubScreen(el){
 
   ${isCustom||!isBuiltIn?`<p class="s-section-label">Custom rates</p><div class="s-group"><div style="padding:14px 16px">
     <div class="form-2" style="gap:10px;margin-bottom:10px">
-      <div class="field" style="margin-bottom:0"><label>Commission/contract ($)</label><input type="number" value="${f.commissionRate||0}" step="0.01" oninput="f.commissionRate=parseFloat(this.value)||0;save()"></div>
-      <div class="field" style="margin-bottom:0"><label>Platform/contract ($)</label><input type="number" value="${f.platformRate||0}" step="0.01" oninput="f.platformRate=parseFloat(this.value)||0;save()"></div>
+      <div class="field" style="margin-bottom:0"><label>Commission/contract ($)</label><input type="number" value="${f.commissionRate||0}" step="0.01" oninput="state.settings.fees.commissionRate=parseFloat(this.value)||0;save()"></div>
+      <div class="field" style="margin-bottom:0"><label>Platform/contract ($)</label><input type="number" value="${f.platformRate||0}" step="0.01" oninput="state.settings.fees.platformRate=parseFloat(this.value)||0;save()"></div>
     </div>
     <div class="form-2" style="gap:10px;margin-bottom:10px">
-      <div class="field" style="margin-bottom:0"><label>Min commission ($)</label><input type="number" value="${f.minOrderFee||0}" step="0.01" oninput="f.minOrderFee=parseFloat(this.value)||0;save()"></div>
-      <div class="field" style="margin-bottom:0"><label>Min platform fee ($)</label><input type="number" value="${f.minPlatformFee||0}" step="0.01" oninput="f.minPlatformFee=parseFloat(this.value)||0;save()"></div>
+      <div class="field" style="margin-bottom:0"><label>Min commission ($)</label><input type="number" value="${f.minOrderFee||0}" step="0.01" oninput="state.settings.fees.minOrderFee=parseFloat(this.value)||0;save()"></div>
+      <div class="field" style="margin-bottom:0"><label>Min platform fee ($)</label><input type="number" value="${f.minPlatformFee||0}" step="0.01" oninput="state.settings.fees.minPlatformFee=parseFloat(this.value)||0;save()"></div>
     </div>
-    <div class="field" style="margin-bottom:12px"><label>Stock sale fee ($, flat)</label><input type="number" value="${f.stockRate||0}" step="0.01" oninput="f.stockRate=parseFloat(this.value)||0;save()"></div>
+    <div class="field" style="margin-bottom:12px"><label>Stock sale fee ($, flat)</label><input type="number" value="${f.stockRate||0}" step="0.01" oninput="state.settings.fees.stockRate=parseFloat(this.value)||0;save()"></div>
     <button class="btn btn-ghost" style="font-size:13px;font-weight:600" onclick="saveCustomPreset()">💾 Save as named preset…</button>
   </div></div>`:''}
 
   <p class="s-section-label">Pass-through fees</p>
-  <div class="s-group"><div class="s-row" style="cursor:default"><div class="s-row-l"><div><div class="s-rtitle">Include ORF · OCC · FINRA TAF</div></div></div>
-    <label class="toggle" onclick="event.stopPropagation()"><input type="checkbox" ${f.includePassThrough!==false?'checked':''} onchange="f.includePassThrough=this.checked;save()"><div class="toggle-track"></div><div class="toggle-thumb"></div></label>
-  </div><div style="padding:0 16px 14px"><div class="form-3" style="gap:8px">
-    <div class="field" style="margin-bottom:0"><label>ORF/contract</label><input type="number" value="${f.orf||0.012}" step="0.001" oninput="f.orf=parseFloat(this.value)||0;save()"></div>
-    <div class="field" style="margin-bottom:0"><label>OCC/contract</label><input type="number" value="${f.occ||0.025}" step="0.001" oninput="f.occ=parseFloat(this.value)||0;save()"></div>
-    <div class="field" style="margin-bottom:0"><label>FINRA TAF</label><input type="number" value="${f.finraTaf||0.00329}" step="0.0001" oninput="f.finraTaf=parseFloat(this.value)||0;save()"></div>
-  </div></div></div>
+  <div class="s-group">
+    <div class="s-row" style="cursor:default"><div class="s-row-l"><div><div class="s-rtitle">Include ORF · OCC · FINRA TAF</div></div></div>
+      <label class="toggle" onclick="event.stopPropagation()"><input type="checkbox" ${f.includePassThrough!==false?'checked':''} onchange="state.settings.fees.includePassThrough=this.checked;save()"><div class="toggle-track"></div><div class="toggle-thumb"></div></label>
+    </div>
+    <div style="padding:12px 16px 14px"><div class="form-3" style="gap:8px">
+      <div class="field" style="margin-bottom:0"><label>ORF/contract</label><input type="number" value="${f.orf||0.012}" step="0.001" oninput="state.settings.fees.orf=parseFloat(this.value)||0;save()"></div>
+      <div class="field" style="margin-bottom:0"><label>OCC/contract</label><input type="number" value="${f.occ||0.025}" step="0.001" oninput="state.settings.fees.occ=parseFloat(this.value)||0;save()"></div>
+      <div class="field" style="margin-bottom:0"><label>FINRA TAF</label><input type="number" value="${f.finraTaf||0.00329}" step="0.0001" oninput="state.settings.fees.finraTaf=parseFloat(this.value)||0;save()"></div>
+    </div></div>
+  </div>
 
   <p class="s-section-label">Singapore GST</p>
-  <div class="s-group"><div class="s-row" style="cursor:default"><div class="s-row-l"><div><div class="s-rtitle">Apply GST on all fees</div><div class="s-rsub">9% from 1 Jan 2024 · SG residents</div></div></div>
-    <label class="toggle" onclick="event.stopPropagation()"><input type="checkbox" ${f.gst!==false?'checked':''} onchange="f.gst=this.checked;save()"><div class="toggle-track"></div><div class="toggle-thumb"></div></label>
-  </div><div style="padding:0 16px 14px"><div class="field" style="margin-bottom:0"><label>GST rate (%)</label>
-    <input type="number" value="${f.gstRate||9}" step="0.1" min="0" oninput="f.gstRate=parseFloat(this.value)||9;save()">
-  </div></div></div>
+  <div class="s-group">
+    <div class="s-row" style="cursor:default"><div class="s-row-l"><div><div class="s-rtitle">Apply GST on all fees</div><div class="s-rsub">9% from 1 Jan 2024 · SG residents</div></div></div>
+      <label class="toggle" onclick="event.stopPropagation()"><input type="checkbox" ${f.gst!==false?'checked':''} onchange="state.settings.fees.gst=this.checked;save()"><div class="toggle-track"></div><div class="toggle-thumb"></div></label>
+    </div>
+    <div style="padding:12px 16px 14px"><div class="field" style="margin-bottom:0"><label>GST rate (%)</label>
+      <input type="number" value="${f.gstRate||9}" step="0.1" min="0" oninput="state.settings.fees.gstRate=parseFloat(this.value)||9;save()">
+    </div></div>
+  </div>
 
   <div class="s-group" style="margin-top:8px"><div style="padding:12px 16px">
     <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5">Fee changes apply to <strong style="color:var(--text)">new trades only</strong> by default.</div>
