@@ -15,6 +15,7 @@ let state={
     fxRates:{USDSGD:1.34},marginPct:20,
     rebates:[],trueCapital:29122.84,
     fees:{preset:'tiger-ultra',gst:true,gstRate:9,includePassThrough:true,orf:0.012,occ:0.025,finraTaf:0.00329,commissionRate:0.35,platformRate:0.30,minOrderFee:0,minPlatformFee:0,model:'perContract',stockRate:0},
+    customPresets:[],
     logFields:['strike','premium','contracts','iv','delta','notes'],
     histCols:[
       {key:'ticker',label:'Ticker',on:true},{key:'type',label:'Type',on:true},
@@ -45,8 +46,7 @@ function load(){
         if(!state.settings.monthlyTargetMode)state.settings.monthlyTargetMode='amount';
         if(!state.settings.capital)state.settings.capital=[{id:'usd',label:'USD Account',currency:'USD',amount:0,enabled:true},{id:'sgd',label:'SGD Account',currency:'SGD',amount:0,enabled:false}];
         state.settings.fees={...state.settings.fees,...(sv.settings.fees||{})};
-        if(!state.settings.rebates)state.settings.rebates=[];
-        if(state.settings.trueCapital==null)state.settings.trueCapital=0;
+        if(!state.settings.customPresets)state.settings.customPresets=[];
       }
     }else{state.trades=SEED;state.nextId=15;save();}
   }catch(e){state.trades=SEED;state.nextId=15;}
@@ -112,35 +112,6 @@ function recomputeFees(scope){
   });
   save();toast('Updated '+count+' trades');
 }
-function showManualFeeEdit(){
-  // Build a list of recent closed trades for manual fee override
-  const closed=state.trades.filter(t=>t.status==='closed').slice(0,20);
-  const sub=document.getElementById('s-sub-view');
-  sub.innerHTML=S_BACK+`<div class="sub-title">Edit trade fees</div>
-  <div class="sub-desc">Override fees for individual trades. Changes only affect the selected trade and recalculate its net P&L.</div>
-  <div class="s-group">`+closed.map(t=>`
-    <div style="padding:10px 16px;border-bottom:.5px solid var(--border)">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <div style="font-size:13px;font-weight:600">${esc(t.ticker)} ${esc(t.type)} · ${t.closedDate||t.openDate}</div>
-        <div style="font-size:12px;color:var(--text2)">P&L: ${t.pnl!=null?(t.pnl>=0?'+':'')+t.pnl.toFixed(2):'-'}</div>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <div style="flex:1"><label style="font-size:10px;color:var(--text2);font-weight:600;letter-spacing:.03em;text-transform:uppercase">Total fees</label>
-          <input type="number" value="${(t.feesTotal||0).toFixed(4)}" step="0.01" style="margin-top:3px"
-            onchange="overrideTradesFees(${t.id},parseFloat(this.value)||0)">
-        </div>
-        <div style="font-size:12px;color:var(--text2);margin-top:16px">net: <span style="font-weight:700;color:${(t.pnlNet||0)>=0?'var(--pos)':'var(--neg)'}" id="net-${t.id}">${t.pnlNet!=null?(t.pnlNet>=0?'+':'')+t.pnlNet.toFixed(2):'-'}</span></div>
-      </div>
-    </div>`).join('')+`</div>`;
-}
-function overrideTradesFees(id,newFees){
-  const t=state.trades.find(x=>x.id===id);if(!t)return;
-  t.feesTotal=newFees;
-  if(t.pnl!=null)t.pnlNet=+(t.pnl-newFees).toFixed(2);
-  save();
-  const el=document.getElementById('net-'+id);
-  if(el)el.textContent=(t.pnlNet>=0?'+':'')+t.pnlNet.toFixed(2);
-}
 
 function recomputeAllFees(){
   state.trades.forEach(t=>{
@@ -157,8 +128,6 @@ function totalCapitalUSD(){
   return state.settings.capital.filter(c=>c.enabled&&c.amount>0).reduce((s,c)=>s+(c.currency==='USD'?c.amount:c.amount/fx),0);
 }
 
-function totalRebates(){return state.settings.rebates.reduce((s,r)=>s+(r.amount||0),0);}
-function totalRebatesByType(type){return state.settings.rebates.filter(r=>r.type===type).reduce((s,r)=>s+(r.amount||0),0);}
 
 // ═══════════════════ TAB ═══════════════════
 function switchTab(name){
@@ -236,18 +205,19 @@ function renderDashboard(){
   `;
 
   renderCapitalWidget(open);
-  renderPromotionsWidget();
 
   // Open positions with swipe-to-delete
   document.getElementById('dash-open').innerHTML=open.length
     ?open.map(t=>{
         const dl=t.expiry?calcDTE(t.expiry):'-';const warn=typeof dl==='number'&&dl<=7;
+        const expiryFmt=t.expiry?t.expiry.slice(5).replace('-','/'):'—';
         return`<div class="swipe-wrap" id="sw-${t.id}">
           <button class="swipe-delete-btn" onclick="delTrade(${t.id})">Delete</button>
           <div class="swipe-content" id="swc-${t.id}" ontouchstart="swipeStart(event,${t.id})" ontouchmove="swipeMove(event,${t.id})" ontouchend="swipeEnd(event,${t.id})">
             <div style="flex:1">
               <div class="trade-ticker"><span class="badge ${badgeClass(t.type)}">${esc(t.type)}</span>${esc(t.ticker)}</div>
-              <div class="trade-meta">Strike $${t.strike} · ${typeof dl==='number'?`<span class="${warn?'dte-warn':''}">${dl}d left</span>`:'-'} · ${t.contracts} contract${t.contracts>1?'s':''}</div>
+              <div class="trade-meta">@$${t.premium}/sh · ${t.contracts} contract${t.contracts>1?'s':''} · strike $${t.strike}</div>
+              <div class="trade-meta">Exp ${expiryFmt} · ${typeof dl==='number'?`<span class="${warn?'dte-warn':''}">${dl}d left</span>`:'-'}</div>
               ${t.notes?`<div class="trade-note">${esc(t.notes)}</div>`:''}
             </div>
             <div style="text-align:right;flex-shrink:0;padding-left:10px">
@@ -379,42 +349,6 @@ function renderCapitalWidget(openTrades){
   `;
 }
 
-function renderPromotionsWidget(){
-  const promoEl=document.getElementById('promo-card');if(!promoEl)return;
-  const rebates=state.settings.rebates||[];
-  const totalReb=totalRebates();
-  const orderReb=totalRebatesByType('order');
-  const couponReb=totalRebatesByType('coupon');
-  const trueCap=state.settings.trueCapital||0;
-  if(!totalReb&&!trueCap){promoEl.style.display='none';return;}
-  promoEl.style.display='block';
-  const closed=state.trades.filter(t=>t.status==='closed');
-  const totalFees=closed.reduce((s,t)=>s+(t.feesTotal||0),0);
-  const netFeesBenefit=totalReb-totalFees;
-  const benefitColor=netFeesBenefit>=0?'var(--pos)':'var(--neg)';
-  promoEl.querySelector('#promo-body').innerHTML=`
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
-      <div style="background:var(--bg3);border-radius:var(--radius);padding:10px;border:0.5px solid var(--border)">
-        <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">True capital</div>
-        <div style="font-size:15px;font-weight:700">$${trueCap.toLocaleString('en-US',{maximumFractionDigits:0})}</div>
-        <div style="font-size:10px;color:var(--text3);margin-top:2px">own funds</div>
-      </div>
-      <div style="background:var(--bg3);border-radius:var(--radius);padding:10px;border:0.5px solid var(--border)">
-        <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Promotions</div>
-        <div style="font-size:15px;font-weight:700;color:var(--teal)">+$${totalReb.toFixed(2)}</div>
-        <div style="font-size:10px;color:var(--text3);margin-top:2px">${rebates.length} entries</div>
-      </div>
-      <div style="background:var(--bg3);border-radius:var(--radius);padding:10px;border:0.5px solid var(--border)">
-        <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Net fee benefit</div>
-        <div style="font-size:15px;font-weight:700;color:${benefitColor}">${netFeesBenefit>=0?'+':'-'}$${Math.abs(netFeesBenefit).toFixed(2)}</div>
-        <div style="font-size:10px;color:var(--text3);margin-top:2px">rebates − fees</div>
-      </div>
-    </div>
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <div style="font-size:11px;color:var(--text3)">Order rebates <span style="color:var(--teal);font-weight:700">$${orderReb.toFixed(2)}</span> · Coupons <span style="color:var(--teal);font-weight:700">$${couponReb.toFixed(2)}</span></div>
-      <button class="btn-sm" onclick="openSettingsSub('rebates')">Manage</button>
-    </div>`;
-}
 
 // ═══════════════════ ANALYTICS ═══════════════════
 function renderAnalytics(){
@@ -437,35 +371,16 @@ function renderAnalytics(){
   const avgAroc=arocsV.length?(arocsV.reduce((s,v)=>s+v,0)/arocsV.length).toFixed(1):0;
   const avgDTE=opts.length?Math.round(opts.reduce((s,t)=>s+t.dte,0)/opts.length):0;
 
-  const allClosedNet=closed.reduce((s,t)=>s+(t.pnlNet!=null?t.pnlNet:0),0);
-  const rebTotal=totalRebates();
-  const effectiveNet=allClosedNet+rebTotal;
-  const trueCap=state.settings.trueCapital||0;
-  const trueROC=trueCap>0?((allClosedNet/trueCap)*100).toFixed(2):null;
-  const effectiveROC=trueCap>0?((effectiveNet/trueCap)*100).toFixed(2):null;
+  const totalNetPnl=closed.reduce((s,t)=>s+(t.pnlNet!=null?t.pnlNet:0),0);
 
   document.getElementById('ana-cards').innerHTML=`
     <div class="metric"><div class="metric-label">Prem efficiency</div><div class="metric-value">${premEff}%</div><div class="metric-sub">realized ÷ collected</div></div>
     <div class="metric"><div class="metric-label">Cap efficiency</div><div class="metric-value pos">${capEffTot}%</div><div class="metric-sub">P&amp;L ÷ collateral</div></div>
-    <div class="metric"><div class="metric-label">Avg AROC</div><div class="metric-value pos">${avgAroc}%</div><div class="metric-sub">annualized</div></div>
-    <div class="metric"><div class="metric-label">Avg DTE open</div><div class="metric-value">${avgDTE}d</div><div class="metric-sub">options only</div></div>
-    <div class="metric"><div class="metric-label">Monthly ROC</div><div class="metric-value ${monthlyROC!=null&&monthlyROC>=0?'pos':'neg'}">${monthlyROC!=null?monthlyROC+'%':'—'}</div><div class="metric-sub">net P&amp;L ÷ collateral</div></div>
+    <div class="metric"><div class="metric-label">Avg AROC</div><div class="metric-value pos">${avgAroc}%</div><div class="metric-sub">annualized return</div></div>
+    <div class="metric"><div class="metric-label">Avg DTE open</div><div class="metric-value">${avgDTE}d</div><div class="metric-sub">at time of open</div></div>
+    <div class="metric"><div class="metric-label">Monthly ROC</div><div class="metric-value ${monthlyROC!=null&&parseFloat(monthlyROC)>=0?'pos':'neg'}">${monthlyROC!=null?monthlyROC+'%':'—'}</div><div class="metric-sub">net P&amp;L ÷ collateral</div></div>
+    <div class="metric"><div class="metric-label">Net P&amp;L</div><div class="metric-value ${totalNetPnl>=0?'pos':'neg'}">${fmtSgn(totalNetPnl)}</div><div class="metric-sub">after all fees</div></div>
   `;
-  if(rebTotal>0||trueCap>0){
-    const rebCard=document.getElementById('ana-promo-card');
-    if(rebCard){
-      rebCard.style.display='block';
-      rebCard.innerHTML=`<div class="card-title">True vs effective returns</div>
-        <div class="stat-row"><div style="font-size:13px;color:var(--text2)">Trading P&L (net of fees)</div><div style="font-size:14px;font-weight:700" class="${allClosedNet>=0?'pos':'neg'}">${fmtSgn(allClosedNet)}</div></div>
-        <div class="stat-row"><div style="font-size:13px;color:var(--text2)">+ Promotions &amp; rebates</div><div style="font-size:14px;font-weight:700;color:var(--teal)">+$${rebTotal.toFixed(2)}</div></div>
-        <div class="stat-row" style="border-bottom:none"><div style="font-size:13px;font-weight:700">Effective total return</div><div style="font-size:16px;font-weight:700" class="${effectiveNet>=0?'pos':'neg'}">${fmtSgn(effectiveNet)}</div></div>
-        ${trueCap>0?`<div style="margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border);display:flex;gap:16px">
-          <div><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">ROC (trading)</div><div style="font-size:14px;font-weight:700" class="${parseFloat(trueROC)>=0?'pos':'neg'}">${trueROC}%</div></div>
-          <div><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">ROC (effective)</div><div style="font-size:14px;font-weight:700;color:var(--teal)">${effectiveROC}%</div></div>
-          <div><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Capital</div><div style="font-size:14px;font-weight:700">$${trueCap.toLocaleString('en-US',{maximumFractionDigits:0})}</div></div>
-        </div>`:''}`;
-    }
-  }
 
   const tickers=[...new Set(opts.map(t=>t.ticker))];
   const tC=[C.blue,C.teal,C.amber,C.coral,C.purple];
@@ -620,15 +535,21 @@ function showEdit(id){
   document.getElementById('em-iv').value=t.iv||'';
   document.getElementById('em-delta').value=t.delta||'';
   document.getElementById('em-notes').value=t.notes||'';
-  // Fee fields for closed trades
+  // Fee fields — always visible
   const feeSection=document.getElementById('em-fee-section');
   if(feeSection){
+    feeSection.style.display='block';
+    document.getElementById('em-feesOpen').value=(t.feesOpen||0).toFixed(4);
+    const closeWrap=document.getElementById('em-feesClose-wrap');
+    const hint=document.getElementById('em-fee-hint');
     if(t.status==='closed'){
-      feeSection.style.display='block';
-      document.getElementById('em-feesOpen').value=(t.feesOpen||0).toFixed(4);
       document.getElementById('em-feesClose').value=(t.feesClose||0).toFixed(4);
+      if(closeWrap)closeWrap.style.display='';
+      if(hint)hint.textContent='Net P&L recalculates from open + close fees.';
     } else {
-      feeSection.style.display='none';
+      document.getElementById('em-feesClose').value='0';
+      if(closeWrap)closeWrap.style.display='none';
+      if(hint)hint.textContent='Open leg fee only (position not yet closed).';
     }
   }
   document.getElementById('edit-modal').classList.add('show');
@@ -647,22 +568,15 @@ function confirmEdit(){
   t.delta=parseFloat(document.getElementById('em-delta').value)||0;
   t.notes=document.getElementById('em-notes').value||'';
   // Recalc totalCredit
-  if(t.status==='open'){
-    t.totalCredit=t.type==='Stock Sale'?+(t.premium*t.contracts).toFixed(2):+(t.premium*t.contracts*100).toFixed(2);
-  }
-  // For closed trades: use manually entered fees if fee section visible
-  if(t.status==='closed'&&t.pnl!=null){
-    const foEl=document.getElementById('em-feesOpen');
-    const fcEl=document.getElementById('em-feesClose');
-    if(foEl&&document.getElementById('em-fee-section')?.style.display!=='none'){
-      t.feesOpen=parseFloat(foEl.value)||0;
-      t.feesClose=parseFloat(fcEl.value)||0;
-      t.feesTotal=+(t.feesOpen+t.feesClose).toFixed(4);
-    } else {
-      const fc=calcFees(t,t.outcome);
-      t.feesOpen=fc.feesOpen;t.feesClose=fc.feesClose;t.feesTotal=fc.feesTotal;
-    }
-    t.pnlNet=+(t.pnl-t.feesTotal).toFixed(2);
+  t.totalCredit=t.type==='Stock Sale'?+(t.premium*t.contracts).toFixed(2):+(t.premium*t.contracts*100).toFixed(2);
+  // Apply manually entered fees
+  const foEl=document.getElementById('em-feesOpen');
+  const fcEl=document.getElementById('em-feesClose');
+  if(foEl){
+    t.feesOpen=parseFloat(foEl.value)||0;
+    t.feesClose=t.status==='closed'?(parseFloat(fcEl?.value)||0):0;
+    t.feesTotal=+(t.feesOpen+t.feesClose).toFixed(4);
+    if(t.status==='closed'&&t.pnl!=null)t.pnlNet=+(t.pnl-t.feesTotal).toFixed(2);
   }
   save();
   hideModal('edit-modal');
@@ -673,6 +587,45 @@ function confirmEdit(){
   if(active==='history')renderHistory();
 }
 
+
+// ═══════════════════ BATCH EDIT ═══════════════════
+let batchMode=false;
+const batchSel=new Set();
+let _batchTrades=[];
+
+function toggleBatchMode(){batchMode=!batchMode;batchSel.clear();renderHistory();}
+function toggleBatchItem(id){
+  if(batchSel.has(id))batchSel.delete(id);else batchSel.add(id);
+  const cb=document.getElementById('bchk-'+id);if(cb)cb.checked=batchSel.has(id);
+  const el=document.getElementById('batch-count');if(el)el.textContent=batchSel.size+' selected';
+}
+function batchSelectAll(){_batchTrades.forEach(t=>batchSel.add(t.id));renderHistory();}
+function batchDelete(){
+  if(!batchSel.size){toast('Select trades first','err');return;}
+  if(!confirm('Delete '+batchSel.size+' trade(s)?'))return;
+  state.trades=state.trades.filter(t=>!batchSel.has(t.id));
+  batchSel.clear();save();toast('Deleted');renderHistory();renderDashboard();
+}
+function batchRecalcFees(){
+  if(!batchSel.size){toast('Select trades first','err');return;}
+  let n=0;
+  state.trades.forEach(t=>{
+    if(!batchSel.has(t.id))return;
+    if(t.status==='open'){const fc=calcFees(t,null);t.feesOpen=fc.feesOpen;t.feesClose=0;t.feesTotal=fc.feesOpen;n++;}
+    else if(t.pnl!=null){const fc=calcFees(t,t.outcome);t.feesOpen=fc.feesOpen;t.feesClose=fc.feesClose;t.feesTotal=fc.feesTotal;t.pnlNet=+(t.pnl-t.feesTotal).toFixed(2);n++;}
+  });
+  save();toast('Updated '+n+' trades');renderHistory();
+}
+function batchSetType(type){
+  if(!type||!batchSel.size){return;}
+  state.trades.forEach(t=>{if(batchSel.has(t.id))t.type=type;});
+  save();toast('Type → '+type+' for '+batchSel.size+' trades');renderHistory();
+}
+function batchSetOutcome(outcome){
+  if(!outcome||!batchSel.size)return;
+  state.trades.forEach(t=>{if(batchSel.has(t.id)&&t.status==='closed')t.outcome=outcome;});
+  save();toast('Outcome → '+outcome+' for '+batchSel.size+' trades');renderHistory();
+}
 
 // ═══════════════════ HISTORY ═══════════════════
 let histFilters={ticker:'',type:'',outcome:'',dateFrom:'',dateTo:'',period:'all'};
@@ -726,14 +679,45 @@ function renderHistory(){
   if(histFilters.dateFrom)trades=trades.filter(t=>(t.openDate||'')>=histFilters.dateFrom);
   if(histFilters.dateTo)trades=trades.filter(t=>(t.openDate||'')<=histFilters.dateTo);
   const totalPnl=trades.filter(t=>t.status==='closed').reduce((s,t)=>s+(t.pnl||0),0);
-  document.getElementById('hist-pnl-bar').innerHTML=`<div style="font-size:11px;color:var(--text2)">${trades.length} trades · filtered gross P&amp;L</div><div style="font-size:17px;font-weight:700" class="${totalPnl>=0?'pos':'neg'}">${fmtSgn(totalPnl)}</div>`;
+  _batchTrades=trades;
+  if(batchMode){
+    document.getElementById('hist-pnl-bar').innerHTML=`
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:700;color:var(--blue)" id="batch-count">${batchSel.size} selected</span>
+        <button class="btn-sm" onclick="toggleBatchMode()" style="font-size:11px">✕ Done</button>
+      </div>
+      <div class="batch-bar">
+        <button class="btn-sm" onclick="batchSelectAll()">All ${trades.length}</button>
+        <button class="btn-sm btn-del" onclick="batchDelete()">🗑 Delete</button>
+        <button class="btn-sm" onclick="batchRecalcFees()">↻ Fees</button>
+        <select class="hist-sel" style="font-size:12px;padding:5px 8px;width:auto" onchange="batchSetType(this.value);this.value=''">
+          <option value="">Change type…</option>
+          ${['CSP','CC','PMCC','Diagonal','Bull Put','Bear Call','Stock Sale'].map(t=>`<option>${t}</option>`).join('')}
+        </select>
+        <select class="hist-sel" style="font-size:12px;padding:5px 8px;width:auto" onchange="batchSetOutcome(this.value);this.value=''">
+          <option value="">Outcome…</option>
+          ${['Expired','Closed','Assigned','Sold'].map(o=>`<option>${o}</option>`).join('')}
+        </select>
+      </div>`;
+  } else {
+    document.getElementById('hist-pnl-bar').innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-size:11px;color:var(--text2)">${trades.length} trades · filtered gross P&amp;L</div>
+          <div style="font-size:17px;font-weight:700" class="${totalPnl>=0?'pos':'neg'}">${fmtSgn(totalPnl)}</div>
+        </div>
+        <button class="btn-sm" onclick="toggleBatchMode()" style="margin-top:2px;font-size:11px">Select</button>
+      </div>`;
+  }
   const cols=state.settings.histCols.filter(c=>c.on);
   const el=document.getElementById('hist-list');
   if(!trades.length){el.innerHTML='<div class="empty">No trades match filters</div>';return;}
   el.innerHTML='<div class="card">'+trades.map(t=>{
     const isOpen=t.status==='open';const ce=capEff(t);const a=aroc(t);
     const pp=t.totalCredit>0&&t.pnl!=null?((t.pnl/t.totalCredit)*100).toFixed(1):null;
-    return`<div class="trade-row">
+    const chk=batchMode?`<input type="checkbox" id="bchk-${t.id}" ${batchSel.has(t.id)?'checked':''} onchange="event.stopPropagation();toggleBatchItem(${t.id})" style="width:18px;height:18px;margin-right:10px;accent-color:var(--blue);flex-shrink:0;align-self:center;cursor:pointer">`:'';
+    return`<div class="trade-row" style="${batchMode?'cursor:pointer;':''}" onclick="${batchMode?`toggleBatchItem(${t.id})`:''}">
+      ${chk}
       <div style="flex:1">
         <div class="trade-ticker"><span class="badge ${badgeClass(t.type)}">${esc(t.type)}</span><span style="font-weight:700">${esc(t.ticker)}</span> <span style="font-size:11px;font-weight:400;color:var(--text2)">$${t.strike}</span></div>
         <div class="trade-meta">${t.openDate}${t.closedDate?' → '+t.closedDate:''} · ${t.dte}d${t.iv?' · IV '+t.iv+'%':''}</div>
@@ -748,7 +732,7 @@ function renderHistory(){
         <div class="trade-pnl ${isOpen?'pos':t.pnl>=0?'pos':'neg'}">${isOpen?'+'+fmt(t.totalCredit):fmtSgn(t.pnl||0)}</div>
         ${!isOpen&&t.pnlNet!=null?`<div style="font-size:11px;color:var(--text2)">net ${fmtSgn(t.pnlNet)}</div>`:''}
         <div style="font-size:11px;margin-top:3px"><span class="badge ${isOpen?'b-open':outcomeClass(t.outcome)}">${isOpen?'Open':t.outcome}</span>${pp!=null?' '+pp+'%':''}</div>
-        <div style="display:flex;gap:5px;margin-top:5px;justify-content:flex-end"><button class="btn-sm" onclick="showEdit(${t.id})">Edit</button>${isOpen?`<button class="btn-sm" onclick="showClose(${t.id})">Close</button>`:''}<button class="btn-sm btn-del" onclick="delTrade(${t.id})">Del</button></div>
+        ${!batchMode?`<div style="display:flex;gap:5px;margin-top:5px;justify-content:flex-end"><button class="btn-sm" onclick="showEdit(${t.id})">Edit</button>${isOpen?`<button class="btn-sm" onclick="showClose(${t.id})">Close</button>`:''}<button class="btn-sm btn-del" onclick="delTrade(${t.id})">Del</button></div>`:''}
       </div></div>`;
   }).join('')+'</div>';
 }
@@ -806,19 +790,6 @@ function renderSettingsMain(){
       <div class="s-row-l"><div class="s-icon" style="background:rgba(93,202,165,0.12)"><svg viewBox="0 0 24 24" fill="none" stroke="#5DCAA5" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
       <div><div class="s-rtitle">History columns</div><div class="s-rsub">${cCount} visible</div></div></div>
       <div class="s-row-r"><span class="s-chev">›</span></div>
-    </div>
-  </div>
-  <p class="s-section-label">Promotions</p>
-  <div class="s-group">
-    <div class="s-row" onclick="openSettingsSub('capital')">
-      <div class="s-row-l"><div class="s-icon" style="background:rgba(93,202,165,0.12)"><svg viewBox="0 0 24 24" fill="none" stroke="#5DCAA5" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
-      <div><div class="s-rtitle">True capital</div><div class="s-rsub">$${(state.settings.trueCapital||0).toLocaleString('en-US',{maximumFractionDigits:2})}</div></div></div>
-      <div class="s-row-r"><span class="s-chev">›</span></div>
-    </div>
-    <div class="s-row" onclick="openSettingsSub('rebates')">
-      <div class="s-row-l"><div class="s-icon" style="background:rgba(93,202,165,0.12)"><svg viewBox="0 0 24 24" fill="none" stroke="#5DCAA5" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 100 4h4a2 2 0 110 4H8"/><line x1="12" y1="6" x2="12" y2="8"/><line x1="12" y1="16" x2="12" y2="18"/></svg></div>
-      <div><div class="s-rtitle">Rebates &amp; bonuses</div><div class="s-rsub">${(state.settings.rebates||[]).length} entries · $${totalRebates().toFixed(2)} total</div></div></div>
-      <div class="s-row-r"><span class="s-chip chip-green">+$${totalRebates().toFixed(2)}</span><span class="s-chev">›</span></div>
     </div>
   </div>
   <p class="s-section-label">Data</p>
@@ -979,15 +950,52 @@ function renderSettingsSub(id,el){
 
 function renderFeeSubScreen(el){
   const f=state.settings.fees||{};const pKey=f.preset||'tiger-ultra';
-  el.innerHTML=S_BACK+`<div class="sub-title">Commissions &amp; fees</div><div class="sub-desc">Select your broker preset. Fees auto-apply on every trade.</div>
-  <p class="s-section-label">Broker preset</p>
-  <div class="preset-grid">${Object.entries(PRESETS).map(([k,p])=>`<div class="preset-pill ${pKey===k?'on':''}" onclick="selectFeePreset('${k}')"><div class="preset-pill-name">${p.name}</div><div class="preset-pill-sub">${p.sub}</div></div>`).join('')}</div>
-  ${pKey==='custom'?`<p class="s-section-label">Custom rates</p><div class="s-group"><div style="padding:14px 16px">
-    <div class="form-2" style="gap:10px;margin-bottom:10px"><div class="field" style="margin-bottom:0"><label>Commission/contract ($)</label><input type="number" value="${f.commissionRate||0}" step="0.01" oninput="f.commissionRate=parseFloat(this.value)||0;save()"></div>
-    <div class="field" style="margin-bottom:0"><label>Platform/contract ($)</label><input type="number" value="${f.platformRate||0}" step="0.01" oninput="f.platformRate=parseFloat(this.value)||0;save()"></div></div>
-    <div class="form-2" style="gap:10px;margin-bottom:10px"><div class="field" style="margin-bottom:0"><label>Min commission ($)</label><input type="number" value="${f.minOrderFee||0}" step="0.01" oninput="f.minOrderFee=parseFloat(this.value)||0;save()"></div>
-    <div class="field" style="margin-bottom:0"><label>Min platform fee ($)</label><input type="number" value="${f.minPlatformFee||0}" step="0.01" oninput="f.minPlatformFee=parseFloat(this.value)||0;save()"></div></div>
+  const cps=state.settings.customPresets||[];
+  const isCustom=pKey==='custom'||cps.some(p=>p.id===pKey);
+  const isBuiltIn=!!PRESETS[pKey];
+  // Built-in broker presets (exclude 'free' — shown separately)
+  const brokerPresets=Object.entries(PRESETS).filter(([k])=>k!=='free'&&k!=='custom');
+
+  el.innerHTML=S_BACK+`<div class="sub-title">Commissions &amp; fees</div>
+  <div class="sub-desc">Choose a broker preset or set custom rates. Commission-free removes all fees.</div>
+
+  <!-- Commission-free toggle -->
+  <div class="s-group" style="margin-bottom:8px">
+    <div class="s-row" onclick="selectFeePreset('${pKey==='free'?'tiger-ultra':'free'}')" style="border-bottom:none">
+      <div class="s-row-l">
+        <div class="s-icon" style="background:rgba(93,202,165,0.12)"><svg viewBox="0 0 24 24" fill="none" stroke="#5DCAA5" stroke-width="2"><path d="M12 2a10 10 0 100 20A10 10 0 0012 2z"/><path d="M16 8h-6a2 2 0 100 4h4a2 2 0 110 4H8"/><line x1="12" y1="6" x2="12" y2="8"/><line x1="12" y1="16" x2="12" y2="18"/></svg></div>
+        <div><div class="s-rtitle">Commission-free</div><div class="s-rsub">Promo period — $0 all fees</div></div>
+      </div>
+      <div class="s-row-r">
+        ${pKey==='free'?'<span class="s-chip chip-green">Active</span>':'<span class="s-chip" style="background:var(--bg3);color:var(--text2)">Off</span>'}
+        <span class="s-chev">›</span>
+      </div>
+    </div>
+  </div>
+
+  <p class="s-section-label">Broker presets</p>
+  <div class="preset-grid">${brokerPresets.map(([k,p])=>`<div class="preset-pill ${pKey===k?'on':''}" onclick="selectFeePreset('${k}')"><div class="preset-pill-name">${p.name}</div><div class="preset-pill-sub">${p.sub}</div></div>`).join('')}
+  <div class="preset-pill ${pKey==='custom'?'on':''}" onclick="selectFeePreset('custom')"><div class="preset-pill-name">Custom</div><div class="preset-pill-sub">Set your own rates</div></div></div>
+
+  ${cps.length?`<p class="s-section-label">My presets</p>
+  <div class="preset-grid">${cps.map(p=>`<div class="preset-pill ${pKey===p.id?'on':''}" onclick="selectFeePreset('${p.id}')">
+    <button class="preset-pill-del" onclick="event.stopPropagation();deleteCustomPreset('${p.id}')">×</button>
+    <div class="preset-pill-name">${esc(p.name)}</div><div class="preset-pill-sub">${esc(p.sub)}</div>
+  </div>`).join('')}</div>`:''}
+
+  ${isCustom||!isBuiltIn?`<p class="s-section-label">Custom rates</p><div class="s-group"><div style="padding:14px 16px">
+    <div class="form-2" style="gap:10px;margin-bottom:10px">
+      <div class="field" style="margin-bottom:0"><label>Commission/contract ($)</label><input type="number" value="${f.commissionRate||0}" step="0.01" oninput="f.commissionRate=parseFloat(this.value)||0;save()"></div>
+      <div class="field" style="margin-bottom:0"><label>Platform/contract ($)</label><input type="number" value="${f.platformRate||0}" step="0.01" oninput="f.platformRate=parseFloat(this.value)||0;save()"></div>
+    </div>
+    <div class="form-2" style="gap:10px;margin-bottom:10px">
+      <div class="field" style="margin-bottom:0"><label>Min commission ($)</label><input type="number" value="${f.minOrderFee||0}" step="0.01" oninput="f.minOrderFee=parseFloat(this.value)||0;save()"></div>
+      <div class="field" style="margin-bottom:0"><label>Min platform fee ($)</label><input type="number" value="${f.minPlatformFee||0}" step="0.01" oninput="f.minPlatformFee=parseFloat(this.value)||0;save()"></div>
+    </div>
+    <div class="field" style="margin-bottom:12px"><label>Stock sale fee ($, flat)</label><input type="number" value="${f.stockRate||0}" step="0.01" oninput="f.stockRate=parseFloat(this.value)||0;save()"></div>
+    <button class="btn btn-ghost" style="font-size:13px;font-weight:600" onclick="saveCustomPreset()">💾 Save as named preset…</button>
   </div></div>`:''}
+
   <p class="s-section-label">Pass-through fees</p>
   <div class="s-group"><div class="s-row" style="cursor:default"><div class="s-row-l"><div><div class="s-rtitle">Include ORF · OCC · FINRA TAF</div></div></div>
     <label class="toggle" onclick="event.stopPropagation()"><input type="checkbox" ${f.includePassThrough!==false?'checked':''} onchange="f.includePassThrough=this.checked;save()"><div class="toggle-track"></div><div class="toggle-thumb"></div></label>
@@ -996,26 +1004,51 @@ function renderFeeSubScreen(el){
     <div class="field" style="margin-bottom:0"><label>OCC/contract</label><input type="number" value="${f.occ||0.025}" step="0.001" oninput="f.occ=parseFloat(this.value)||0;save()"></div>
     <div class="field" style="margin-bottom:0"><label>FINRA TAF</label><input type="number" value="${f.finraTaf||0.00329}" step="0.0001" oninput="f.finraTaf=parseFloat(this.value)||0;save()"></div>
   </div></div></div>
+
   <p class="s-section-label">Singapore GST</p>
   <div class="s-group"><div class="s-row" style="cursor:default"><div class="s-row-l"><div><div class="s-rtitle">Apply GST on all fees</div><div class="s-rsub">9% from 1 Jan 2024 · SG residents</div></div></div>
     <label class="toggle" onclick="event.stopPropagation()"><input type="checkbox" ${f.gst!==false?'checked':''} onchange="f.gst=this.checked;save()"><div class="toggle-track"></div><div class="toggle-thumb"></div></label>
   </div><div style="padding:0 16px 14px"><div class="field" style="margin-bottom:0"><label>GST rate (%)</label>
     <input type="number" value="${f.gstRate||9}" step="0.1" min="0" oninput="f.gstRate=parseFloat(this.value)||9;save()">
   </div></div></div>
+
   <div class="s-group" style="margin-top:8px"><div style="padding:12px 16px">
     <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5">Fee changes apply to <strong style="color:var(--text)">new trades only</strong> by default.</div>
     <div style="display:flex;flex-direction:column;gap:8px">
-      <button class="btn btn-ghost" style="text-align:left;padding:11px 14px;font-size:13px;font-weight:600" onclick="recomputeFees(\'open\')">↻ Open trades only</button>
-      <button class="btn btn-ghost" style="text-align:left;padding:11px 14px;font-size:13px;font-weight:600" onclick="recomputeFees(\'all\')">↻ All trades (open + closed)</button>
-      <button class="btn btn-ghost" style="text-align:left;padding:11px 14px;font-size:13px;font-weight:600" onclick="showManualFeeEdit()">✎ Edit individual trade fees</button>
+      <button class="btn btn-ghost" style="text-align:left;padding:11px 14px;font-size:13px;font-weight:600" onclick="recomputeFees(\'open\')">↻ Recalculate open trades</button>
+      <button class="btn btn-ghost" style="text-align:left;padding:11px 14px;font-size:13px;font-weight:600" onclick="recomputeFees(\'all\')">↻ Recalculate all trades</button>
     </div>
   </div></div>`;
 }
 
 function selectFeePreset(key){
   const f=state.settings.fees;f.preset=key;
-  const p=PRESETS[key];if(p)Object.assign(f,{commissionRate:p.commissionRate,platformRate:p.platformRate,minOrderFee:p.minOrderFee,minPlatformFee:p.minPlatformFee,includePassThrough:p.includePassThrough,model:p.model,stockRate:p.stockRate});
+  let p=PRESETS[key]||(state.settings.customPresets||[]).find(x=>x.id===key);
+  if(p)Object.assign(f,{commissionRate:p.commissionRate,platformRate:p.platformRate,minOrderFee:p.minOrderFee,minPlatformFee:p.minPlatformFee,includePassThrough:p.includePassThrough,model:p.model,stockRate:p.stockRate||0});
   save();renderFeeSubScreen(document.getElementById('s-sub-view'));toast('Preset saved · applies to new trades');
+}
+function saveCustomPreset(){
+  const name=prompt('Name for this preset:','My Broker');
+  if(!name||!name.trim())return;
+  const f=state.settings.fees;
+  const id='cp-'+Date.now();
+  if(!state.settings.customPresets)state.settings.customPresets=[];
+  state.settings.customPresets.push({
+    id,name:name.trim(),
+    sub:'$'+(f.commissionRate||0).toFixed(2)+'/contract',
+    model:f.model||'perContract',
+    commissionRate:f.commissionRate||0,platformRate:f.platformRate||0,
+    minOrderFee:f.minOrderFee||0,minPlatformFee:f.minPlatformFee||0,
+    includePassThrough:f.includePassThrough!==false,stockRate:f.stockRate||0
+  });
+  f.preset=id;save();toast('"'+name.trim()+'" saved');
+  renderFeeSubScreen(document.getElementById('s-sub-view'));
+}
+function deleteCustomPreset(id){
+  if(!confirm('Delete this preset?'))return;
+  state.settings.customPresets=(state.settings.customPresets||[]).filter(p=>p.id!==id);
+  if(state.settings.fees.preset===id){state.settings.fees.preset='custom';}
+  save();renderFeeSubScreen(document.getElementById('s-sub-view'));
 }
 function toggleLogField(key,on){const f=state.settings.logFields;if(on&&!f.includes(key))f.push(key);else if(!on)state.settings.logFields=f.filter(k=>k!==key);save();}
 let _dragIdx=null;

@@ -14,6 +14,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',sans-serif;backg
 .nav-btn svg{width:21px;height:21px;stroke-width:1.7}
 .panel{display:none;padding:14px}.panel.active{display:block}
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px}
 .metric{background:var(--card);border-radius:var(--radius);padding:11px 12px;border:0.5px solid var(--border)}
 .metric-label{font-size:10px;color:var(--text2);margin-bottom:3px;font-weight:500;letter-spacing:.03em;text-transform:uppercase}
 .metric-value{font-size:19px;font-weight:700;line-height:1.1}
@@ -145,6 +146,13 @@ input[readonly]{background:var(--bg3);color:var(--text2)}
 .target-bar-track{height:5px;background:var(--bg3);border-radius:3px;overflow:hidden;margin-top:3px}
 .target-bar-fill{height:100%;border-radius:3px;transition:width .4s}
 
+/* Batch edit bar */
+.batch-bar{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:10px 14px;background:var(--card);border-radius:var(--radius);margin-bottom:8px;border:0.5px solid rgba(133,183,235,0.4)}
+.batch-bar select{width:auto;font-size:12px;padding:5px 8px;flex-shrink:0}
+/* Commission-free preset pill */
+.preset-pill.free-pill{border-color:rgba(93,202,165,0.35);background:rgba(93,202,165,0.05)}
+.preset-pill.free-pill.on{border-color:var(--teal);background:rgba(93,202,165,0.12)}
+.preset-pill-del{float:right;background:none;border:none;color:var(--neg);font-size:16px;cursor:pointer;padding:0;line-height:1;margin-left:4px}
 /* Log form — lighter input background for visibility */
 #log-form input, #log-form select {
   background: var(--log-input-bg);
