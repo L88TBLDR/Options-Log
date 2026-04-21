@@ -967,18 +967,47 @@ function renderSettingsSub(id,el){
       </div>`).join('')}</div>`;
   }else if(id==='data'){
     const stored=localStorage.getItem(SK)||'';
-    el.innerHTML=S_BACK+`<div class="sub-title">Data &amp; backup</div><div class="sub-desc">Trades saved on-device. Export CSV as backup.</div>
+    const f=state.settings.fees||{};
+    const pKey=f.preset||'tiger-ultra';
+    const pName=(PRESETS[pKey]||(state.settings.customPresets||[]).find(p=>p.id===pKey)||{name:'Custom'}).name;
+    const dep=state.settings.deposited||0;
+    const equity=(state.settings.capital.find(c=>c.id==='usd')||{}).amount||0;
+    el.innerHTML=S_BACK+`<div class="sub-title">Data &amp; backup</div>
+    <div class="sub-desc">Full backup saves everything — trades, fee plan, capital, deposits, targets, custom presets. Use this to switch phones or preserve your setup.</div>
+
+    <p class="s-section-label">Full backup (recommended)</p>
     <div class="s-group">
-      <div class="s-row" onclick="exportCSV()"><div class="s-row-l"><div class="s-icon" style="background:rgba(93,202,165,0.12)"><svg viewBox="0 0 24 24" fill="none" stroke="#5DCAA5" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
-      <div><div class="s-rtitle">Export trades</div><div class="s-rsub">${state.trades.length} trades · ${(stored.length/1024).toFixed(1)} KB</div></div></div><div class="s-row-r"><span class="s-chip chip-green">CSV</span><span class="s-chev">›</span></div></div>
+      <div class="s-row" onclick="exportFullBackup()">
+        <div class="s-row-l"><div class="s-icon" style="background:rgba(93,202,165,0.12)"><svg viewBox="0 0 24 24" fill="none" stroke="#5DCAA5" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
+        <div>
+          <div class="s-rtitle">Export full backup</div>
+          <div class="s-rsub">${state.trades.length} trades · ${pName} · ${dep?'Dep $'+dep.toLocaleString('en-US',{maximumFractionDigits:0})+' · ':''} ${equity?'Portfolio $'+equity.toLocaleString('en-US',{maximumFractionDigits:0}):''}</div>
+        </div></div>
+        <div class="s-row-r"><span class="s-chip chip-green">JSON</span><span class="s-chev">›</span></div>
+      </div>
+      <div class="s-row" style="cursor:default">
+        <div class="s-row-l"><div class="s-icon" style="background:rgba(133,183,235,0.12)"><svg viewBox="0 0 24 24" fill="none" stroke="#85B7EB" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
+        <div><div class="s-rtitle">Import full backup</div><div class="s-rsub">Restores all trades + settings exactly</div></div></div>
+        <div class="s-row-r">
+          <input type="file" id="backup-file" accept=".json" style="display:none" onchange="importFullBackup(event)">
+          <button class="btn-sm" onclick="document.getElementById('backup-file').click()">Choose file</button>
+        </div>
+      </div>
+    </div>
+
+    <p class="s-section-label">Trades only (CSV)</p>
+    <div class="s-group">
+      <div class="s-row" onclick="exportCSV()"><div class="s-row-l"><div class="s-icon" style="background:rgba(175,169,236,0.12)"><svg viewBox="0 0 24 24" fill="none" stroke="#AFA9EC" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
+      <div><div class="s-rtitle">Export trades CSV</div><div class="s-rsub">${state.trades.length} trades — no settings</div></div></div><div class="s-row-r"><span class="s-chip" style="background:rgba(175,169,236,0.12);color:#AFA9EC">CSV</span><span class="s-chev">›</span></div></div>
       <div class="s-row" onclick="downloadTemplate()"><div class="s-row-l"><div class="s-icon" style="background:rgba(133,183,235,0.12)"><svg viewBox="0 0 24 24" fill="none" stroke="#85B7EB" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
-      <div><div class="s-rtitle">Download template</div></div></div><div class="s-row-r"><span class="s-chev">›</span></div></div>
+      <div><div class="s-rtitle">Download CSV template</div></div></div><div class="s-row-r"><span class="s-chev">›</span></div></div>
     </div>
     <div class="s-group"><div style="padding:14px 16px">
-      <div class="field"><label>Import mode</label><select id="import-mode"><option value="merge">Merge — add new trades</option><option value="replace">Replace — overwrite all</option></select></div>
+      <div class="field"><label>CSV import mode</label><select id="import-mode"><option value="merge">Merge — add new trades</option><option value="replace">Replace — overwrite trades only</option></select></div>
       <input type="file" id="import-file" accept=".csv" style="display:none" onchange="handleImport(event)">
-      <button class="btn btn-amber" onclick="document.getElementById('import-file').click()">Import from CSV</button>
+      <button class="btn btn-ghost" style="font-size:13px;font-weight:600" onclick="document.getElementById('import-file').click()">Import from CSV</button>
     </div></div>
+
     <div class="s-group"><div class="s-row" onclick="confirmClearAll()">
       <div class="s-row-l"><div class="s-icon" style="background:rgba(240,149,149,0.08)"><svg viewBox="0 0 24 24" fill="none" stroke="#F09595" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></div>
       <div><div class="s-rtitle" style="color:var(--neg)">Clear all data</div></div></div>
@@ -1123,6 +1152,51 @@ function deleteRebate(idx){
   renderPromotionsWidget();
 }
 function confirmClearAll(){if(!confirm('Delete ALL trades and reset? Cannot be undone.'))return;localStorage.removeItem(SK);state.trades=[];state.nextId=1;save();toast('All data cleared','warn');renderDashboard();renderSettingsSub('data',document.getElementById('s-sub-view'));}
+
+// ═══════════════════ FULL BACKUP ═══════════════════
+function exportFullBackup(){
+  const backup={
+    _version:'ot-backup-v1',
+    _exported:new Date().toISOString(),
+    trades:state.trades,
+    nextId:state.nextId,
+    settings:state.settings
+  };
+  const json=JSON.stringify(backup,null,2);
+  const blob=new Blob([json],{type:'application/json;charset=utf-8;'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='options-backup-'+new Date().toISOString().slice(0,10)+'.json';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  toast('Full backup exported ✓');
+}
+function importFullBackup(event){
+  const file=event.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const backup=JSON.parse(e.target.result);
+      if(!backup._version||!backup._version.startsWith('ot-backup')){
+        toast('Not a valid backup file','err');return;
+      }
+      if(!confirm('This will replace ALL your trades and settings with the backup. Continue?'))return;
+      if(backup.trades)state.trades=backup.trades;
+      if(backup.nextId)state.nextId=backup.nextId;
+      if(backup.settings){
+        // Merge carefully — keep any new default keys from current version
+        state.settings={...state.settings,...backup.settings};
+        if(backup.settings.fees)state.settings.fees={...state.settings.fees,...backup.settings.fees};
+        if(!state.settings.customPresets)state.settings.customPresets=[];
+      }
+      save();
+      setTheme(state.settings.theme||'dark');
+      renderDashboard();renderSettings();
+      toast('Backup restored — '+state.trades.length+' trades + all settings ✓');
+    }catch(err){toast('Import failed: '+err.message,'err');}
+  };
+  reader.readAsText(file);
+  event.target.value='';
+}
 
 // ═══════════════════ CSV ═══════════════════
 function exportCSV(){
