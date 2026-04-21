@@ -44,10 +44,18 @@ def build():
     }
     manifest_b64 = base64.b64encode(json.dumps(manifest).encode()).decode()
 
-    SW = ("const CACHE='ot-v7';"
+    build_ts = int(time.time())
+    SW = (f"const CACHE='ot-v7-{build_ts}';"
           "self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(['./',])).then(()=>self.skipWaiting()));});"
           "self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>clients.claim()));});"
-          "self.addEventListener('fetch',e=>{e.respondWith(caches.match(e.request).then(c=>c||fetch(e.request).then(r=>{const cl=r.clone();caches.open(CACHE).then(cc=>cc.put(e.request,cl));return r})));});")
+          # Network-first for HTML navigation (gets latest on reload, falls back to cache offline)
+          # Cache-first for everything else (icons, assets)
+          "self.addEventListener('fetch',e=>{"
+          "if(e.request.mode==='navigate'){"
+          "e.respondWith(fetch(e.request).then(r=>{const cl=r.clone();caches.open(CACHE).then(c=>c.put(e.request,cl));return r}).catch(()=>caches.match(e.request)));"
+          "return;}"
+          "e.respondWith(caches.match(e.request).then(c=>c||fetch(e.request).then(r=>{const cl=r.clone();caches.open(CACHE).then(cc=>cc.put(e.request,cl));return r})));"
+          "});")
     sw_b64 = base64.b64encode(SW.encode()).decode()
 
     appjs_final = appjs.replace("__SEED__", SEED).replace("__SW_B64__", sw_b64)
