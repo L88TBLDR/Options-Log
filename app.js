@@ -13,8 +13,8 @@ let state={
       {id:'sgd',label:'SGD Account',currency:'SGD',amount:0,enabled:false},
     ],
     fxRates:{USDSGD:1.34},marginPct:20,
-    rebates:[],trueCapital:29122.84,
-    fees:{preset:'tiger-ultra',gst:true,gstRate:9,includePassThrough:true,orf:0.012,occ:0.025,finraTaf:0.00329,commissionRate:0.35,platformRate:0.30,minOrderFee:0,minPlatformFee:0,model:'perContract',stockRate:0},
+    deposited:0,
+    fees:{preset:'tiger-ultra',gst:true,gstRate:9,includePassThrough:true,orf:0.012,occ:0.025,finraTaf:0.00329,commissionRate:0.35,platformRate:0.30,minOrderFee:0,minPlatformFee:0,model:'perContract',stockRate:5.07},
     customPresets:[],
     logFields:['strike','premium','contracts','iv','delta','notes'],
     histCols:[
@@ -47,6 +47,8 @@ function load(){
         if(!state.settings.capital)state.settings.capital=[{id:'usd',label:'USD Account',currency:'USD',amount:0,enabled:true},{id:'sgd',label:'SGD Account',currency:'SGD',amount:0,enabled:false}];
         state.settings.fees={...state.settings.fees,...(sv.settings.fees||{})};
         if(!state.settings.customPresets)state.settings.customPresets=[];
+        // Migrate trueCapital → deposited
+        if(!state.settings.deposited&&sv.settings.trueCapital)state.settings.deposited=sv.settings.trueCapital;
       }
     }else{state.trades=SEED;state.nextId=15;save();}
   }catch(e){state.trades=SEED;state.nextId=15;}
@@ -70,13 +72,12 @@ const PRESETS={
   'tiger-regular':{name:'Tiger Regular',sub:'Min $2.99/order',model:'perOrder',commissionRate:1.99,platformRate:1.00,minOrderFee:1.99,minPlatformFee:1.00,includePassThrough:true,stockRate:5.07},
   'moomoo-fixed':{name:'Moomoo Fixed',sub:'Min $1.99',model:'perContract',commissionRate:0.65,platformRate:0.30,minOrderFee:1.99,minPlatformFee:0.99,includePassThrough:true,stockRate:0},
   'ibkr':{name:'IBKR',sub:'$0.65/contract',model:'perContract',commissionRate:0.65,platformRate:0,minOrderFee:1.00,minPlatformFee:0,includePassThrough:true,stockRate:0},
-  'free':{name:'Commission-free',sub:'$0 fees',model:'perContract',commissionRate:0,platformRate:0,minOrderFee:0,minPlatformFee:0,includePassThrough:false,stockRate:0},
+  'free':{name:'Commission-free',sub:'No commission · fees still apply',model:'perContract',commissionRate:0,platformRate:0.30,minOrderFee:0,minPlatformFee:0,includePassThrough:true,stockRate:5.07},
   'custom':{name:'Custom',sub:'Set your own rates',model:'perContract',commissionRate:0,platformRate:0,minOrderFee:0,minPlatformFee:0,includePassThrough:true,stockRate:0},
 };
 
 function calcFees(trade,outcome){
   const f=state.settings.fees||{};
-  if(f.preset==='free')return{feesOpen:0,feesClose:0,feesTotal:0};
   if(trade.type==='Stock Sale'){const fee=+(f.stockRate||0).toFixed(4);return{feesOpen:fee,feesClose:0,feesTotal:fee};}
   const pKey=f.preset||'custom';const p=PRESETS[pKey]||f;
   const contracts=trade.contracts||1;
@@ -346,6 +347,23 @@ function renderCapitalWidget(openTrades){
       <span>Capital deployed</span><span style="font-weight:700;color:${utilCol}">${util.toFixed(1)}%</span>
     </div>
     <div class="gauge-wrap"><div class="gauge-fill" style="width:${util.toFixed(1)}%;background:${utilCol}"></div></div>
+    ${(()=>{
+      const dep=state.settings.deposited||0;
+      if(!dep)return'';
+      const gain=equity-dep;
+      const gainPct=dep>0?((gain/dep)*100):0;
+      const gainCol=gain>=0?'var(--pos)':'var(--neg)';
+      return`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border)">
+        <div>
+          <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Total deposited</div>
+          <div style="font-size:14px;font-weight:700">$${dep.toLocaleString('en-US',{maximumFractionDigits:0})}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">Portfolio return</div>
+          <div style="font-size:14px;font-weight:700;color:${gainCol}">${gain>=0?'+':'-'}$${Math.abs(gain).toLocaleString('en-US',{maximumFractionDigits:0})} <span style="font-size:11px;font-weight:600">(${gain>=0?'+':''}${gainPct.toFixed(1)}%)</span></div>
+        </div>
+      </div>`;
+    })()}
   `;
 }
 
@@ -745,7 +763,9 @@ function renderSettingsMain(){
   const pName=(PRESETS[pKey]||{name:'Custom'}).name;
   const th=state.settings.theme||'dark';
   const caps=state.settings.capital.filter(c=>c.enabled&&c.amount>0);
-  const capSub=caps.length?caps.map(c=>(c.currency==='USD'?'$':'S$')+c.amount.toLocaleString('en-US',{maximumFractionDigits:0})).join(' + '):'Not set';
+  const capPortfolio=caps.length?caps.map(c=>(c.currency==='USD'?'$':'S$')+c.amount.toLocaleString('en-US',{maximumFractionDigits:0})).join(' + '):'Not set';
+  const capDep=state.settings.deposited||0;
+  const capSub=capDep?`Portfolio ${capPortfolio} · Deposited $${capDep.toLocaleString('en-US',{maximumFractionDigits:0})}`:capPortfolio;
   const fCount=state.settings.logFields.length;
   const cCount=state.settings.histCols.filter(c=>c.on).length;
   const tgt=state.settings.monthlyTarget||500;
@@ -851,15 +871,34 @@ function renderSettingsSub(id,el){
     </div></div>`;
     }else if(id==='account'){
     const udsCap=state.settings.capital.find(c=>c.id==='usd')||state.settings.capital[0];
+    const dep=state.settings.deposited||0;
+    const equity=udsCap?udsCap.amount||0:0;
+    const gain=equity-dep;
+    const gainPct=dep>0?((gain/dep)*100):0;
     el.innerHTML=S_BACK+`<div class="sub-title">Capital</div>
-    <div class="sub-desc">Set your USD account balance. Used to calculate capital utilisation on the dashboard.</div>
+    <div class="sub-desc">Track your current portfolio value and your original deposits separately.</div>
     <div class="s-group"><div style="padding:20px 16px 16px">
-      <div class="field" style="margin-bottom:0">
-        <label>Account balance (USD)</label>
-        <input type="number" id="cap-usd-input" value="${udsCap?udsCap.amount||'':''}" placeholder="e.g. 37466" step="100"
+      <div class="field" style="margin-bottom:16px">
+        <label>Current portfolio value (USD)</label>
+        <input type="number" id="cap-usd-input" value="${equity||''}" placeholder="e.g. 37466" step="100"
           oninput="updateCapBalance(parseFloat(this.value)||0)">
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Your account equity today — drives the capital utilisation widget</div>
       </div>
-    </div></div>`;
+      <div class="field" style="margin-bottom:0">
+        <label>Total deposited (USD)</label>
+        <input type="number" id="cap-dep-input" value="${dep||''}" placeholder="e.g. 29122" step="100"
+          oninput="state.settings.deposited=parseFloat(this.value)||0;save();renderCapitalWidget()">
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">All funds you personally put in — shown as a reference in the capital widget</div>
+      </div>
+    </div></div>
+    ${equity&&dep?`<div class="s-group"><div style="padding:14px 16px">
+      <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Portfolio return</div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:13px;color:var(--text2)">Portfolio − deposited</div>
+        <div style="font-size:16px;font-weight:700;color:${gain>=0?'var(--pos)':'var(--neg)'}">${gain>=0?'+':'-'}$${Math.abs(gain).toLocaleString('en-US',{maximumFractionDigits:0})} <span style="font-size:12px">(${gainPct>=0?'+':''}${gainPct.toFixed(1)}%)</span></div>
+      </div>
+    </div></div>`:''}
+    `;
   }else if(id==='capital'){
     const cap=state.settings.trueCapital||0;
     el.innerHTML=S_BACK+`<div class="sub-title">True capital</div>
