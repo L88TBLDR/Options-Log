@@ -331,7 +331,7 @@ input[readonly]{background:var(--surface2);color:var(--ink2)}
   <div class="grid-2" id="sum-cards"></div>
   <div class="card" id="capital-card"><div class="card-title">Capital utilisation</div><div id="capital-body"></div></div>
   <div class="card" id="promo-card" style="display:none;border-color:rgba(93,202,165,0.2)"><div class="card-title" style="display:flex;justify-content:space-between;align-items:center"><span>Promotions &amp; capital</span><span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:rgba(93,202,165,0.12);color:var(--teal)">New account</span></div><div id="promo-body"></div></div>
-  <div class="card"><div class="card-title">Open positions</div><div id="dash-open"></div></div>
+  <div class="card"><div class="card-title" style="display:flex;justify-content:space-between;align-items:center"><span>Open positions</span><span id="dash-open-count" class="mono" style="font-size:13px;font-weight:700;color:var(--ink2)"></span></div><div id="dash-open"></div></div>
   <div class="card">
     <div class="card-title">Cumulative P&amp;L</div>
     <div class="chart-wrap"><canvas id="c-pnl"></canvas></div>
@@ -685,7 +685,7 @@ function renderDashboard(){
     const _hr=new Date().getHours();
     const _greet=_hr<12?'Good morning':_hr<17?'Good afternoon':'Good evening';
     const _uname=state.settings.name||'';
-    _dh.innerHTML=`<div style="padding:4px 0 14px">
+    _dh.innerHTML=`<div style="padding-top:calc(env(safe-area-inset-top,44px) + 12px);padding-bottom:14px">
       <div style="font-size:9px;font-weight:700;letter-spacing:.12em;color:var(--ink3);text-transform:uppercase;margin-bottom:4px">Options Log</div>
       <div style="font-size:22px;font-weight:700;color:var(--ink);line-height:1.2">${_greet}${_uname?', '+esc(_uname):''}.</div>
     </div>`;
@@ -695,6 +695,19 @@ function renderDashboard(){
   const sparkClosed=[...state.trades.filter(t=>t.status==='closed'&&t.closedDate)].sort((a,b)=>new Date(a.closedDate)-new Date(b.closedDate));
   let sparkRun=0;const sparkData=sparkClosed.map(t=>{sparkRun+=t.pnl||0;return sparkRun;});
 
+  // helper: donut with centred label overlay
+  const _kpiDonut=(val,size,stroke,color,track,...lines)=>`
+    <div style="flex-shrink:0;position:relative;width:${size}px;height:${size}px">
+      ${svgDonut(val,size,stroke,color,track)}
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;pointer-events:none">
+        ${lines.map(([txt,st])=>`<span style="font-family:'JetBrains Mono',monospace;line-height:1.1;${st}">${txt}</span>`).join('')}
+      </div>
+    </div>`;
+
+  const netGrossPnl=grossPnl-totalFees;
+  // open premium bar vs monthly target (capped at 100%)
+  const openPremBarPct=effectiveTarget>0?Math.min(100,(openCred/effectiveTarget)*100):0;
+
   // 2x2 KPI tiles
   document.getElementById('sum-cards').innerHTML=`
     <div class="kpi-tile">
@@ -703,6 +716,7 @@ function renderDashboard(){
         <div>
           <div class="kpi-value mono ${grossPnl>=0?'pos':'neg'}">${fmtSgn(grossPnl,0)}</div>
           <div class="kpi-sub neg">-$${totalFees.toFixed(2)} fees</div>
+          <div class="kpi-sub" style="color:${netGrossPnl>=0?'var(--pos)':'var(--neg)'};margin-top:1px">Net ${fmtSgn(netGrossPnl,0)}</div>
         </div>
         <div style="flex-shrink:0">${svgSpark(sparkData.length>=2?sparkData:[],84,32,grossPnl>=0?'var(--pos)':'var(--neg)')}</div>
       </div>
@@ -714,15 +728,18 @@ function renderDashboard(){
           <div class="kpi-value mono">${wr}%</div>
           <div class="kpi-sub">${wins}W ${opts.length-wins}L</div>
         </div>
-        <div style="flex-shrink:0">${svgDonut(wr,52,7,'var(--pos)','var(--chip)')}</div>
+        ${_kpiDonut(wr,52,7,'var(--pos)','var(--chip)',[wr+'%','font-size:10px;font-weight:700;color:var(--ink)'])}
       </div>
     </div>
     <div class="kpi-tile">
       <div class="kpi-label">Open premium</div>
       <div class="kpi-inner">
-        <div>
+        <div style="flex:1;min-width:0">
           <div class="kpi-value mono pos">${fmt(openCred,0)}</div>
           <div class="kpi-sub">${open.length} position${open.length!==1?'s':''}</div>
+          <div style="margin-top:8px;height:4px;background:var(--chip);border-radius:2px;overflow:hidden">
+            <div style="height:100%;width:${openPremBarPct}%;background:var(--pos);border-radius:2px;transition:width .4s"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -731,14 +748,18 @@ function renderDashboard(){
       <div class="kpi-inner">
         <div>
           <div class="kpi-value mono" style="color:${targetColor}">${fmt(thisMonthNet,0)}</div>
-          <div class="kpi-sub">${monthLabel} · ${targetPct.toFixed(0)}% of ${targetLabel}</div>
+          <div class="kpi-sub">${targetPct.toFixed(0)}% of ${targetLabel}</div>
         </div>
-        <div style="flex-shrink:0">${svgDonut(Math.min(100,targetPct),52,7,targetColor,'var(--chip)')}</div>
+        ${_kpiDonut(Math.min(100,targetPct),52,7,targetColor,'var(--chip)',[targetPct.toFixed(0)+'%','font-size:10px;font-weight:700;color:var(--ink)'])}
       </div>
     </div>
   `;
 
   renderCapitalWidget(open);
+
+  // Open positions count badge
+  const _oc=document.getElementById('dash-open-count');
+  if(_oc)_oc.textContent=open.length?open.length:'';
 
   // Open positions with swipe-to-delete — redesigned rows
   document.getElementById('dash-open').innerHTML=open.length
@@ -835,6 +856,7 @@ function renderCapitalWidget(openTrades){
         ${svgDonut(util,68,9,utilCol,'var(--chip)')}
         <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column">
           <span class="mono" style="font-size:11px;font-weight:700;line-height:1">${util.toFixed(0)}%</span>
+          <span style="font-size:8px;font-weight:600;color:var(--ink3);letter-spacing:.04em;margin-top:1px">Used</span>
         </div>
       </div>
       <div style="flex:1;min-width:0">
@@ -2003,7 +2025,7 @@ function handleImport(event){
 function parseCSVLine(line){const r=[];let cur='';let inQ=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(inQ&&line[i+1]==='"'){cur+='"';i++;}else inQ=!inQ;}else if(c===','&&!inQ){r.push(cur.trim());cur='';}else cur+=c;}r.push(cur.trim());return r;}
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzcwOTcyMTEnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzcwOTc3NTknO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
 
 // ═══════════════════ INIT ═══════════════════
 load();
