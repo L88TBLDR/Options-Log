@@ -323,24 +323,15 @@ input[readonly]{background:var(--surface2);color:var(--ink2)}
 </style>
 </head>
 <body>
-<div class="header">
-  <div class="header-inner">
-    <div><h1>Options Tracker</h1><div class="header-sub" id="hdr-sub">—</div></div>
-    <div class="header-badge" id="hdr-badge"></div>
-  </div>
-</div>
 <div id="toast" class="toast"></div>
 
 <!-- DASHBOARD -->
 <div id="dashboard" class="panel active">
+  <div id="dash-header"></div>
   <div class="grid-2" id="sum-cards"></div>
   <div class="card" id="capital-card"><div class="card-title">Capital utilisation</div><div id="capital-body"></div></div>
   <div class="card" id="promo-card" style="display:none;border-color:rgba(93,202,165,0.2)"><div class="card-title" style="display:flex;justify-content:space-between;align-items:center"><span>Promotions &amp; capital</span><span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:rgba(93,202,165,0.12);color:var(--teal)">New account</span></div><div id="promo-body"></div></div>
   <div class="card"><div class="card-title">Open positions</div><div id="dash-open"></div></div>
-  <div class="card">
-    <div class="card-title">Monthly net P&amp;L</div>
-    <div class="chart-wrap" style="height:200px"><canvas id="c-monthly-bar"></canvas></div>
-  </div>
   <div class="card">
     <div class="card-title">Cumulative P&amp;L</div>
     <div class="chart-wrap"><canvas id="c-pnl"></canvas></div>
@@ -688,9 +679,17 @@ function renderDashboard(){
   const monthLabel=now.toLocaleString('default',{month:'short',year:'2-digit'});
   const targetLabel='$'+effectiveTarget.toFixed(0);
 
-  document.getElementById('hdr-sub').textContent=opts.length+' trades · '+open.length+' open';
-  document.getElementById('hdr-badge').textContent=(grossPnl>=0?'+':'')+fmt(grossPnl,0);
-  document.getElementById('hdr-badge').style.color=grossPnl>=0?'var(--pos)':'var(--neg)';
+  // Dashboard greeting header
+  const _dh=document.getElementById('dash-header');
+  if(_dh){
+    const _hr=new Date().getHours();
+    const _greet=_hr<12?'Good morning':_hr<17?'Good afternoon':'Good evening';
+    const _uname=state.settings.name||'';
+    _dh.innerHTML=`<div style="padding:4px 0 14px">
+      <div style="font-size:9px;font-weight:700;letter-spacing:.12em;color:var(--ink3);text-transform:uppercase;margin-bottom:4px">Options Log</div>
+      <div style="font-size:22px;font-weight:700;color:var(--ink);line-height:1.2">${_greet}${_uname?', '+esc(_uname):''}.</div>
+    </div>`;
+  }
 
   // Build cumulative P&L sparkline data
   const sparkClosed=[...state.trades.filter(t=>t.status==='closed'&&t.closedDate)].sort((a,b)=>new Date(a.closedDate)-new Date(b.closedDate));
@@ -779,55 +778,6 @@ function renderDashboard(){
       }).join('')
     :'<div class="empty">No open positions</div>';
 
-  // Monthly net realized P&L bar chart
-  // Group by closedDate month, sum pnlNet
-  const mm={};
-  closed.forEach(t=>{
-    if(!t.closedDate)return;
-    const mo=t.closedDate.slice(0,7);
-    const v=t.pnlNet!=null?t.pnlNet:netPnl(t)||0;
-    mm[mo]=(mm[mo]||0)+v;
-  });
-  const months=Object.keys(mm).sort();
-  const mPnl=months.map(mo=>+mm[mo].toFixed(2));
-  const _tgtRaw=state.settings.monthlyTarget||500;
-  const _tgtMode=state.settings.monthlyTargetMode||'amount';
-  const _equity=totalCapitalUSD();
-  const tgt=_tgtMode==='pct'&&_equity>0?(_equity*_tgtRaw/100):_tgtRaw;
-  dc('monthly-bar');
-  if(months.length){
-    _charts['monthly-bar']=new Chart(document.getElementById('c-monthly-bar'),{
-      type:'bar',
-      data:{
-        labels:months.map(mo=>{const[y,m]=mo.split('-');return new Date(y,m-1).toLocaleString('default',{month:'short',year:'2-digit'});}),
-        datasets:[
-          {
-            label:'Net P&L',data:mPnl,
-            backgroundColor:mPnl.map(v=>v>=0?C.pos+'bb':C.neg+'bb'),
-            borderColor:mPnl.map(v=>v>=0?C.pos:C.neg),
-            borderWidth:1,borderRadius:4,
-          },
-          {
-            label:'Target',data:months.map(()=>tgt),
-            type:'line',borderColor:C.amber+'99',borderWidth:1.5,
-            borderDash:[5,4],pointRadius:0,fill:false,tension:0,
-          }
-        ]
-      },
-      options:{
-        responsive:true,maintainAspectRatio:false,
-        plugins:{
-          legend:{display:false},
-          tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': $'+ctx.parsed.y.toFixed(2)}}
-        },
-        scales:{
-          x:{ticks:{color:C.text,font:{size:10},autoSkip:false,maxRotation:45},grid:{display:false}},
-          y:{ticks:{color:C.text,font:{size:10},callback:v=>'$'+v},grid:{color:C.grid}}
-        }
-      }
-    });
-  }
-
   // Cumulative gross P&L line
   const sc=[...closed].filter(t=>t.closedDate).sort((a,b)=>new Date(a.closedDate)-new Date(b.closedDate));
   let run=0;
@@ -865,7 +815,7 @@ function renderCapitalWidget(openTrades){
   const ccNotional=ccOpen.reduce((s,t)=>s+t.strike*t.contracts*100,0);
   const notional=cspNotional+ccNotional;
   const free=equity>0?equity-notional:0;
-  const util=equity>0?Math.min(100,(notional/equity)*100):0;
+  const util=equity>0?(notional/equity)*100:0;
   const utilCol=util>80?'var(--neg)':util>60?'var(--warn)':'var(--blue)';
 
   if(equity===0){
@@ -944,8 +894,8 @@ function renderAnalytics(){
   const curMonAna=nowAna.toISOString().slice(0,7);
   const thisMonOpts=opts.filter(t=>t.closedDate&&t.closedDate.slice(0,7)===curMonAna);
   const thisMonNet=thisMonOpts.reduce((s,t)=>s+(t.pnlNet!=null?t.pnlNet:t.pnl||0),0);
-  const thisMonCollat=thisMonOpts.reduce((s,t)=>s+t.strike*t.contracts*100,0);
-  const monthlyROC=thisMonCollat>0?((thisMonNet/thisMonCollat)*100):null;
+  const equityAna=totalCapitalUSD();
+  const monthlyROC=equityAna>0?((thisMonNet/equityAna)*100):null;
   const mrocColor=monthlyROC!=null&&monthlyROC>=0?'var(--pos)':'var(--neg)';
   const mrocLabel=monthlyROC!=null?(monthlyROC>=0?'+':'')+monthlyROC.toFixed(2)+'%':'—';
 
@@ -1208,7 +1158,7 @@ function updateLogCalc(){
     <div class="mono" style="font-size:18px;font-weight:700;color:${color||'var(--ink)'}">${val}</div>
   </div>`;
 
-  calcEl.innerHTML=`<div class="card" style="margin-bottom:0;border-left:3px solid var(--accent)">
+  calcEl.innerHTML=`<div class="card" style="margin-bottom:0">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
       <div class="card-title" style="margin-bottom:0">Live calc</div>
     </div>
@@ -1566,15 +1516,17 @@ function renderSettingsMain(){
   // Profile card — earliest trade date
   const earliest=state.trades.length?[...state.trades].sort((a,b)=>(a.openDate||'').localeCompare(b.openDate||''))[0]:null;
   const trackingSince=earliest?(()=>{const d=new Date(earliest.openDate+'T00:00:00');return d.toLocaleString('default',{month:'short',year:'numeric'});})():'no trades yet';
-  const firstInitial='O';
+  const uName=state.settings.name||'Options Log';
+  const firstInitial=(state.settings.name||'O')[0].toUpperCase();
 
   document.getElementById('s-main-view').innerHTML=`
-  <div class="profile-card">
+  <div class="profile-card" onclick="openSettingsSub('profile')" style="cursor:pointer">
     <div class="profile-avatar">${firstInitial}</div>
-    <div>
-      <div class="profile-name">Options Tracker</div>
+    <div style="flex:1">
+      <div class="profile-name">${esc(uName)}</div>
       <div class="profile-sub">Tracking since ${trackingSince} · ${state.trades.length} trades</div>
     </div>
+    <span class="s-chev" style="font-size:18px;color:var(--ink3)">›</span>
   </div>
   <p class="s-section-label">General</p>
   <div class="s-group">
@@ -1635,7 +1587,17 @@ function openSettingsSub(id){document.getElementById('s-main-view').style.displa
 function closeSettingsSub(){document.getElementById('s-sub-view').style.display='none';document.getElementById('s-main-view').style.display='block';renderSettingsMain();}
 
 function renderSettingsSub(id,el){
-  if(id==='appearance'){
+  if(id==='profile'){
+    const cur=state.settings.name||'';
+    el.innerHTML=S_BACK+`<div class="sub-title">Profile</div>
+    <div class="sub-desc">Your name appears as the greeting on the dashboard.</div>
+    <div class="s-group"><div style="padding:14px 16px">
+      <div style="font-size:11px;color:var(--ink2);font-weight:600;letter-spacing:.03em;text-transform:uppercase;margin-bottom:8px">Display name</div>
+      <input id="s-profile-name" type="text" placeholder="e.g. Leon" value="${esc(cur)}"
+        style="width:100%;padding:10px 12px;font-size:15px;background:var(--chip);border:1px solid var(--border);border-radius:8px;color:var(--ink);outline:none;box-sizing:border-box">
+      <button class="btn btn-blue" style="width:100%;margin-top:12px" onclick="const v=document.getElementById('s-profile-name').value.trim();state.settings.name=v;save();renderDashboard();closeSettingsSub();toast('Name updated')">Save</button>
+    </div></div>`;
+  }else if(id==='appearance'){
     const th=state.settings.theme||'dark';
     el.innerHTML=S_BACK+`<div class="sub-title">Appearance</div><div class="sub-desc">Choose your preferred theme.</div>
     <div class="s-group"><div class="s-row" style="cursor:default"><div class="s-row-l"><div class="s-rtitle">Theme</div></div>
@@ -2041,7 +2003,7 @@ function handleImport(event){
 function parseCSVLine(line){const r=[];let cur='';let inQ=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(inQ&&line[i+1]==='"'){cur+='"';i++;}else inQ=!inQ;}else if(c===','&&!inQ){r.push(cur.trim());cur='';}else cur+=c;}r.push(cur.trim());return r;}
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzcwOTYxOTInO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzcwOTcyMTEnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
 
 // ═══════════════════ INIT ═══════════════════
 load();
