@@ -182,7 +182,7 @@ input[readonly]{background:var(--surface2);color:var(--ink2)}
 .calc-item-val{font-size:16px;font-weight:700}
 
 /* Filter bar */
-.filter-bar{display:flex;gap:8px;margin-bottom:12px;overflow-x:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch}
+.filter-bar{display:block;margin-bottom:12px}
 .filter-bar select{width:auto;font-size:16px;padding:7px 10px;flex-shrink:0}
 
 /* History filter redesign */
@@ -195,8 +195,8 @@ input[readonly]{background:var(--surface2);color:var(--ink2)}
 .hist-date-row input{flex:1;font-size:13px;padding:7px 10px}
 .hist-selects{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
 .hist-selects.has-clear{grid-template-columns:1fr 1fr 1fr auto}
-.hist-sel{font-size:13px;padding:7px 8px;border-radius:var(--radius);background:var(--surface2);border:1px solid var(--border2);color:var(--ink2);width:100%;transition:border-color .15s,background .15s,color .15s;-webkit-appearance:none;appearance:none}
-.hist-sel.on{border-color:var(--accent);color:var(--ink);background:var(--accent-soft)}
+.hist-sel{font-size:13px;padding:7px 30px 7px 10px;border-radius:var(--radius);background:var(--surface2);border:1px solid var(--border2);color:var(--ink2);width:100%;transition:border-color .15s,background .15s,color .15s;-webkit-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23888' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+.hist-sel.on{border-color:var(--accent);color:var(--ink);background-color:var(--accent-soft);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%235DCAA5' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
 .hist-clear{padding:7px 11px;border-radius:var(--radius);border:1px solid color-mix(in oklch,var(--neg) 30%,transparent);background:var(--neg-soft);color:var(--neg);cursor:pointer;font-size:13px;font-weight:700;white-space:nowrap;transition:opacity .15s}
 .hist-clear:active{opacity:.7}
 
@@ -759,7 +759,7 @@ function renderDashboard(){
 
   // Open positions count badge
   const _oc=document.getElementById('dash-open-count');
-  if(_oc)_oc.textContent=open.length?open.length:'';
+  if(_oc)_oc.innerHTML=open.length?`<span style="color:var(--pos);font-size:15px">${open.length}</span><span style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.06em;margin-left:4px">OPEN</span>`:'';
 
   // Open positions with swipe-to-delete — redesigned rows
   document.getElementById('dash-open').innerHTML=open.length
@@ -1451,7 +1451,7 @@ function renderHistory(){
     `<div class="hist-outcome-row">${outcomeChips}</div>`+
     `<div class="hist-type-row" style="padding-bottom:8px">${typeChips}</div>`+
     (curPeriod==='custom'?`<div class="hist-date-row"><input type="date" value="${histFilters.dateFrom}" onchange="histFilters.dateFrom=this.value;renderHistory()"><input type="date" value="${histFilters.dateTo}" onchange="histFilters.dateTo=this.value;renderHistory()"></div>`:'')+
-    `<div style="display:flex;gap:8px;align-items:center">${tickerSel}${hasClear?`<button class="hist-clear" onclick="histFilters.ticker='';histFilters.type='';histFilters.outcome='';renderHistory()">Clear</button>`:''}</div>`;
+    `<div style="display:flex;gap:8px;align-items:center;padding-bottom:8px">${tickerSel}${hasClear?`<button class="hist-clear" onclick="histFilters.ticker='';histFilters.type='';histFilters.outcome='';renderHistory()">Clear</button>`:''}</div>`;
 
   let trades=[...state.trades];
   if(histFilters.ticker)trades=trades.filter(t=>t.ticker===histFilters.ticker);
@@ -2064,7 +2064,7 @@ function handleImport(event){
 function parseCSVLine(line){const r=[];let cur='';let inQ=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(inQ&&line[i+1]==='"'){cur+='"';i++;}else inQ=!inQ;}else if(c===','&&!inQ){r.push(cur.trim());cur='';}else cur+=c;}r.push(cur.trim());return r;}
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzcxMTQ5OTgnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzcxMTU3NTUnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
 
 // ═══════════════════ INIT ═══════════════════
 load();
