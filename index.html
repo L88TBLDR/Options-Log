@@ -908,7 +908,9 @@ function renderAnalytics(){
   const totalCred=opts.reduce((s,t)=>s+t.totalCredit,0);
   const premEff=totalCred>0?((grossPnl/totalCred)*100).toFixed(1):'0.0';
   const capRisk=opts.reduce((s,t)=>s+t.strike*t.contracts*100,0);
-  const capEffTot=capRisk>0?((grossPnl/capRisk)*100).toFixed(2):'0.00';
+  const totalNetPnl=closed.reduce((s,t)=>s+(t.pnlNet!=null?t.pnlNet:netPnl(t)||0),0);
+  const equityForEff=totalCapitalUSD();
+  const capEffTot=equityForEff>0?((totalNetPnl/equityForEff)*100).toFixed(2):'0.00';
   const arocsV=opts.filter(t=>t.dte>0).map(t=>aroc(t)).filter(v=>v!==null);
   const avgAroc=arocsV.length?(arocsV.reduce((s,v)=>s+v,0)/arocsV.length).toFixed(1):'0.0';
   const avgDTE=opts.length?Math.round(opts.reduce((s,t)=>s+t.dte,0)/opts.length):0;
@@ -933,9 +935,18 @@ function renderAnalytics(){
   let cumRun=0;const cumAll=sc.map(t=>{cumRun+=t.pnl||0;return+cumRun.toFixed(2);});
   const cumLabels=sc.map(t=>t.closedDate.slice(5));
   function sliceCum(r){
-    const n={ALL:sc.length,'YTD':sc.filter(t=>t.closedDate.startsWith(new Date().getFullYear()+'')).length,'3M':Math.min(sc.length,Math.ceil(sc.length*0.5)),'1M':Math.min(sc.length,Math.ceil(sc.length*0.2)),'1W':Math.min(sc.length,Math.ceil(sc.length*0.08))}[r]||sc.length;
-    const sl=cumAll.slice(-n);const lb=cumLabels.slice(-n);
-    return{data:sl,labels:lb};
+    const now=new Date();
+    let cutoff=null;
+    if(r==='1W'){cutoff=new Date(now);cutoff.setDate(cutoff.getDate()-7);}
+    else if(r==='1M'){cutoff=new Date(now);cutoff.setMonth(cutoff.getMonth()-1);}
+    else if(r==='3M'){cutoff=new Date(now);cutoff.setMonth(cutoff.getMonth()-3);}
+    else if(r==='YTD'){cutoff=new Date(now.getFullYear(),0,1);}
+    if(!cutoff)return{data:cumAll,labels:cumLabels};
+    const cutStr=cutoff.toISOString().slice(0,10);
+    const idx=sc.findIndex(t=>t.closedDate>=cutStr);
+    if(idx<0)return{data:[],labels:[]};
+    const base=idx>0?cumAll[idx-1]:0;
+    return{data:cumAll.slice(idx).map(v=>+(v-base).toFixed(2)),labels:cumLabels.slice(idx)};
   }
   const{data:cumData,labels:cumLbls}=sliceCum(_anaRange);
   const cumTotal=cumData.length?cumData[cumData.length-1]:0;
@@ -992,7 +1003,7 @@ function renderAnalytics(){
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
       ${_effStatTile('Premium efficiency',premEff+'%','premium kept vs collected','var(--pos)')}
-      ${_effStatTile('Capital efficiency',capEffTot+'%','net P&L / avg deployed','var(--accent)')}
+      ${_effStatTile('Capital efficiency',capEffTot+'%','total net P&L / equity','var(--accent)')}
       ${_effStatTile('Avg ROC',avgAroc+'%','per trade','var(--pos)')}
       ${_effStatTile('Avg DTE (open)',avgDTE+'d','days to expiry','var(--ink)')}
     </div>
@@ -1001,28 +1012,36 @@ function renderAnalytics(){
       ${(()=>{
         const dep=state.settings.deposited||0;
         const allClo=[...closed].filter(t=>t.closedDate).sort((a,b)=>a.closedDate.localeCompare(b.closedDate));
-        const rocMonths=[...new Set(allClo.map(t=>t.closedDate.slice(0,7)))].sort();
+        const rocMonths=[...new Set(allClo.map(t=>t.closedDate.slice(0,7)))].sort().slice(-6);
         if(!rocMonths.length)return'<span style="font-size:11px;color:var(--ink3)">No data</span>';
-        let cumNet=0;
-        const rocRows=rocMonths.map(mo=>{
+        // build per-month ROC values
+        let cumNetAll=0;
+        // pre-compute cumulative net before each month using all closed trades
+        const rocVals=rocMonths.map(mo=>{
+          // cumulative net BEFORE this month = sum of all closes before this month
+          const before=allClo.filter(t=>t.closedDate<mo+'-01');
+          const cumBefore=before.reduce((s,t)=>s+(t.pnlNet!=null?t.pnlNet:netPnl(t)||0),0);
+          const eqStart=dep+cumBefore;
           const mTrades=allClo.filter(t=>t.closedDate.slice(0,7)===mo);
           const mNet=mTrades.reduce((s,t)=>s+(t.pnlNet!=null?t.pnlNet:netPnl(t)||0),0);
-          const eqStart=dep+cumNet;
           const roc=eqStart>0?(mNet/eqStart*100):null;
-          cumNet+=mNet;
-          const rocStr=roc!=null?(roc>=0?'+':'')+roc.toFixed(1)+'%':'—';
-          const col=roc!=null?(roc>=0?'var(--pos)':'var(--neg)'):'var(--ink3)';
-          const mshort=new Date(mo+'-01').toLocaleString('default',{month:'short',year:'2-digit'});
-          const barPct=roc!=null?Math.min(100,Math.abs(roc)/5*100):0; // scale: 5% ROC = full bar
-          return`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:var(--ink2);width:40px;flex-shrink:0">${mshort}</span>
-            <div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
-              <div style="width:${barPct}%;height:100%;background:${col};border-radius:3px"></div>
-            </div>
-            <span class="mono" style="font-size:11px;font-weight:700;color:${col};width:44px;text-align:right">${rocStr}</span>
-          </div>`;
+          return{mo,roc};
         });
-        return rocRows.join('');
+        const maxRoc=Math.max(...rocVals.map(x=>Math.abs(x.roc||0)))||1;
+        return`<div style="display:flex;align-items:flex-end;gap:4px;height:70px;padding-top:4px">
+          ${rocVals.map(({mo,roc})=>{
+            const pos=roc==null||roc>=0;
+            const col=roc==null?'var(--ink3)':pos?'var(--pos)':'var(--neg)';
+            const h=roc!=null?Math.max(4,Math.abs(roc)/maxRoc*44):4;
+            const lbl=roc!=null?(Math.abs(roc)<10?roc.toFixed(1):Math.round(roc))+'%':'—';
+            const mshort=new Date(mo+'-01').toLocaleString('default',{month:'short'});
+            return`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">
+              <span class="mono" style="font-size:9px;font-weight:700;color:${col}">${lbl}</span>
+              <div style="width:80%;height:${h}px;background:${col};border-radius:3px;opacity:0.9"></div>
+              <span style="font-size:8px;color:var(--ink3);font-family:'JetBrains Mono',monospace">${mshort}</span>
+            </div>`;
+          }).join('')}
+        </div>`;
       })()}
     </div>
   </div>
@@ -2045,7 +2064,7 @@ function handleImport(event){
 function parseCSVLine(line){const r=[];let cur='';let inQ=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(inQ&&line[i+1]==='"'){cur+='"';i++;}else inQ=!inQ;}else if(c===','&&!inQ){r.push(cur.trim());cur='';}else cur+=c;}r.push(cur.trim());return r;}
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzcxMTIwMjQnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzcxMTI1MzQnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
 
 // ═══════════════════ INIT ═══════════════════
 load();
