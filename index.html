@@ -97,7 +97,7 @@ body{font-family:'Inter',-apple-system,system-ui,sans-serif;background:var(--bg)
 .nav-btn svg{width:21px;height:21px;stroke-width:1.7}
 
 /* Panels */
-.panel{display:none;padding:14px}.panel.active{display:block}
+.panel{display:none;padding:14px}.panel.active{display:block;padding-top:calc(env(safe-area-inset-top,44px) + 14px)}
 
 /* KPI grid */
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
@@ -685,7 +685,7 @@ function renderDashboard(){
     const _hr=new Date().getHours();
     const _greet=_hr<12?'Good morning':_hr<17?'Good afternoon':'Good evening';
     const _uname=state.settings.name||'';
-    _dh.innerHTML=`<div style="padding-top:calc(env(safe-area-inset-top,44px) + 12px);padding-bottom:14px">
+    _dh.innerHTML=`<div style="padding-top:0;padding-bottom:14px">
       <div style="font-size:9px;font-weight:700;letter-spacing:.12em;color:var(--ink3);text-transform:uppercase;margin-bottom:4px">Options Log</div>
       <div style="font-size:22px;font-weight:700;color:var(--ink);line-height:1.2">${_greet}${_uname?', '+esc(_uname):''}.</div>
     </div>`;
@@ -860,7 +860,7 @@ function renderCapitalWidget(openTrades){
         </div>
       </div>
       <div style="flex:1;min-width:0">
-        <div class="util-row"><span class="util-label">Deployed</span><span class="util-val mono" style="color:${utilCol}">$${notional.toLocaleString('en-US',{maximumFractionDigits:0})}</span></div>
+        <div class="util-row"><span class="util-label">Deployed</span><span class="util-val mono" style="color:${utilCol}">$${notional.toLocaleString('en-US',{maximumFractionDigits:0})} / $${equity.toLocaleString('en-US',{maximumFractionDigits:0})}</span></div>
         <div class="util-row"><span class="util-label">Available</span><span class="util-val mono" style="color:${free>=0?'var(--pos)':'var(--neg)'}">${free>=0?'$'+free.toLocaleString('en-US',{maximumFractionDigits:0}):'-$'+Math.abs(free).toLocaleString('en-US',{maximumFractionDigits:0})}</span></div>
         ${dep?`<div class="util-row"><span class="util-label">Total deposited</span><span class="util-val mono">$${dep.toLocaleString('en-US',{maximumFractionDigits:0})}</span></div>`:''}
         ${gainPct!=null?`<div class="util-row"><span class="util-label">Return on portfolio</span><span class="util-val mono" style="color:${gainCol}">${gain>=0?'+':''}${gainPct.toFixed(1)}%</span></div>`:''}
@@ -970,7 +970,7 @@ function renderAnalytics(){
 
   // Strategy mix
   const allT=[...closed,...open];
-  const typeMap={};allT.forEach(t=>{const v=opts.filter(o=>o.type===t.type).reduce((s,o)=>s+(o.pnl||0),0);typeMap[t.type]={count:(typeMap[t.type]?.count||0)+1,pnl:v};});
+  const typeMap={};allT.forEach(t=>{if(!typeMap[t.type])typeMap[t.type]={count:0,pnl:0};typeMap[t.type].count++;if(t.pnl!=null)typeMap[t.type].pnl+=t.pnl;});
   const typeKeys=Object.keys(typeMap).filter(k=>typeMap[k].count>0);
   const maxStratPnl=Math.max(...typeKeys.map(k=>Math.abs(typeMap[k].pnl)))||1;
   const stratColors=['var(--accent)','var(--pos)','var(--warn)','var(--neg)','var(--blue)','#97C459'];
@@ -997,13 +997,33 @@ function renderAnalytics(){
       ${_effStatTile('Avg DTE (open)',avgDTE+'d','days to expiry','var(--ink)')}
     </div>
     <div style="padding:8px 10px;background:var(--chip);border-radius:8px">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
-        <span style="font-size:11px;font-weight:600;color:var(--ink3)">Monthly ROC</span>
-        <span class="mono" style="font-size:15px;font-weight:700;color:${mrocColor}">${mrocLabel}</span>
-      </div>
-      <div style="display:flex;align-items:flex-end;gap:3px;height:22px">
-        ${months.length?months.map(mo=>{const v=mm[mo]||0;const h=Math.abs(v)/mMax*18;const col=v>=0?'var(--pos)':'var(--neg)';const lbl=mo.slice(5);return`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px"><div style="width:70%;height:${h}px;background:${col};border-radius:2px;min-height:1px"></div><span style="font-size:7px;color:var(--ink3);font-family:'JetBrains Mono',monospace">${new Date(mo+'-01').toLocaleString('default',{month:'short'})}</span></div>`;}).join(''):'<span style="font-size:11px;color:var(--ink3)">No data</span>'}
-      </div>
+      <div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Monthly ROC</div>
+      ${(()=>{
+        const dep=state.settings.deposited||0;
+        const allClo=[...closed].filter(t=>t.closedDate).sort((a,b)=>a.closedDate.localeCompare(b.closedDate));
+        const rocMonths=[...new Set(allClo.map(t=>t.closedDate.slice(0,7)))].sort();
+        if(!rocMonths.length)return'<span style="font-size:11px;color:var(--ink3)">No data</span>';
+        let cumNet=0;
+        const rocRows=rocMonths.map(mo=>{
+          const mTrades=allClo.filter(t=>t.closedDate.slice(0,7)===mo);
+          const mNet=mTrades.reduce((s,t)=>s+(t.pnlNet!=null?t.pnlNet:netPnl(t)||0),0);
+          const eqStart=dep+cumNet;
+          const roc=eqStart>0?(mNet/eqStart*100):null;
+          cumNet+=mNet;
+          const rocStr=roc!=null?(roc>=0?'+':'')+roc.toFixed(1)+'%':'—';
+          const col=roc!=null?(roc>=0?'var(--pos)':'var(--neg)'):'var(--ink3)';
+          const mshort=new Date(mo+'-01').toLocaleString('default',{month:'short',year:'2-digit'});
+          const barPct=roc!=null?Math.min(100,Math.abs(roc)/5*100):0; // scale: 5% ROC = full bar
+          return`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:var(--ink2);width:40px;flex-shrink:0">${mshort}</span>
+            <div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+              <div style="width:${barPct}%;height:100%;background:${col};border-radius:3px"></div>
+            </div>
+            <span class="mono" style="font-size:11px;font-weight:700;color:${col};width:44px;text-align:right">${rocStr}</span>
+          </div>`;
+        });
+        return rocRows.join('');
+      })()}
     </div>
   </div>
 
@@ -2025,7 +2045,7 @@ function handleImport(event){
 function parseCSVLine(line){const r=[];let cur='';let inQ=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(inQ&&line[i+1]==='"'){cur+='"';i++;}else inQ=!inQ;}else if(c===','&&!inQ){r.push(cur.trim());cur='';}else cur+=c;}r.push(cur.trim());return r;}
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzcwOTc3NTknO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzcxMTIwMjQnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
 
 // ═══════════════════ INIT ═══════════════════
 load();
