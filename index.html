@@ -300,6 +300,10 @@ input[readonly]{background:var(--surface2);color:var(--ink2)}
 .target-bar-track{height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin-top:3px}
 .target-bar-fill{height:100%;border-radius:3px;transition:width .4s}
 
+/* Range picker buttons (analytics) */
+.range-btn{font-size:9px;font-family:'JetBrains Mono',monospace;padding:3px 7px;border:1px solid var(--border);background:transparent;color:var(--ink3);border-radius:4px;font-weight:600;cursor:pointer;transition:background .12s,color .12s,border-color .12s}
+.range-btn.active{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+
 /* Batch edit bar */
 .batch-bar{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:10px 14px;background:var(--surface);border-radius:var(--radius);margin-bottom:8px;border:1px solid color-mix(in oklch,var(--accent) 40%,transparent)}
 .batch-bar select{width:auto;font-size:12px;padding:5px 8px;flex-shrink:0}
@@ -345,11 +349,7 @@ input[readonly]{background:var(--surface2);color:var(--ink2)}
 
 <!-- ANALYTICS -->
 <div id="analytics" class="panel">
-  <div class="grid-3" id="ana-cards"></div>
-  <div class="card"><div class="card-title">Capital &amp; premium efficiency by ticker</div><div id="cap-rows"></div></div>
-  <div class="card"><div class="card-title">P&amp;L by ticker</div><div class="legend" id="leg-ticker"></div><div class="chart-wrap"><canvas id="c-ticker"></canvas></div></div>
-  <div class="card"><div class="card-title">Strategy mix</div><div class="legend" id="leg-strat"></div><div class="chart-wrap" style="height:150px"><canvas id="c-strat"></canvas></div></div>
-  <div class="card"><div class="card-title">Outcome breakdown</div><div class="legend" id="leg-outcome"></div><div class="chart-wrap" style="height:140px"><canvas id="c-outcome"></canvas></div></div>
+  <div id="analytics-body"></div>
 </div>
 
 <!-- LOG -->
@@ -357,12 +357,12 @@ input[readonly]{background:var(--surface2);color:var(--ink2)}
   <div class="card">
     <div class="card-title">New position</div>
     <div id="log-form"></div>
-    <div id="log-calc" class="card" style="display:none;margin-top:12px;border-left:3px solid var(--accent)"></div>
-    <div class="btn-row">
+    <div class="btn-row" style="margin-top:8px">
       <button class="btn btn-blue" onclick="logTrade()">Log &amp; save</button>
       <button class="btn btn-ghost" onclick="clearForm()">Clear</button>
     </div>
   </div>
+  <div id="log-calc" style="display:none"></div>
 </div>
 
 <!-- HISTORY -->
@@ -899,99 +899,231 @@ function renderCapitalWidget(openTrades){
 
 
 // ═══════════════════ ANALYTICS ═══════════════════
+let _anaRange='3M'; // cumulative P&L range
+let _tickerRange='3M'; // ticker P&L range
+
+function setAnaRange(r){_anaRange=r;renderAnalytics();}
+function setTickerRange(r){_tickerRange=r;renderAnalytics();}
+
+function _rangePicker(id,val,fn){
+  return['1W','1M','3M','YTD','ALL'].map(r=>`<button class="range-btn${val===r?' active':''}" onclick="${fn}('${r}')">${r}</button>`).join('');
+}
+
+function _anaBarRow(label,value,max,color,right){
+  const pct=max>0?Math.min(100,Math.abs(value)/max*100):0;
+  return`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+    <div style="width:44px;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--ink2)">${label}</div>
+    <div style="flex:1;height:8px;background:var(--chip);border-radius:4px;position:relative;overflow:hidden">
+      <div style="position:absolute;left:0;top:0;height:100%;width:${pct}%;background:${color};border-radius:4px"></div>
+    </div>
+    <div style="width:60px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:${color}">${right}</div>
+  </div>`;
+}
+
+function _effStatTile(label,val,sub,color){
+  return`<div style="padding:8px 10px;background:var(--chip);border-radius:8px">
+    <div style="font-size:9px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:3px">${label}</div>
+    <div class="mono" style="font-size:20px;font-weight:700;color:${color}">${val}</div>
+    <div style="font-size:9px;color:var(--ink3);margin-top:1px">${sub}</div>
+  </div>`;
+}
+
 function renderAnalytics(){
   const closed=state.trades.filter(t=>t.status==='closed');
   const open=state.trades.filter(t=>t.status==='open');
   const opts=closed.filter(t=>t.type!=='Stock Sale');
   const grossPnl=opts.reduce((s,t)=>s+(t.pnl||0),0);
   const totalCred=opts.reduce((s,t)=>s+t.totalCredit,0);
-  const premEff=totalCred>0?((grossPnl/totalCred)*100).toFixed(1):0;
+  const premEff=totalCred>0?((grossPnl/totalCred)*100).toFixed(1):'0.0';
   const capRisk=opts.reduce((s,t)=>s+t.strike*t.contracts*100,0);
-  const capEffTot=capRisk>0?((grossPnl/capRisk)*100).toFixed(2):0;
+  const capEffTot=capRisk>0?((grossPnl/capRisk)*100).toFixed(2):'0.00';
   const arocsV=opts.filter(t=>t.dte>0).map(t=>aroc(t)).filter(v=>v!==null);
-  // Monthly ROC — net P&L / collateral for trades closed this calendar month
+  const avgAroc=arocsV.length?(arocsV.reduce((s,v)=>s+v,0)/arocsV.length).toFixed(1):'0.0';
+  const avgDTE=opts.length?Math.round(opts.reduce((s,t)=>s+t.dte,0)/opts.length):0;
   const nowAna=new Date();
   const curMonAna=nowAna.toISOString().slice(0,7);
   const thisMonOpts=opts.filter(t=>t.closedDate&&t.closedDate.slice(0,7)===curMonAna);
   const thisMonNet=thisMonOpts.reduce((s,t)=>s+(t.pnlNet!=null?t.pnlNet:t.pnl||0),0);
   const thisMonCollat=thisMonOpts.reduce((s,t)=>s+t.strike*t.contracts*100,0);
-  const monthlyROC=thisMonCollat>0?((thisMonNet/thisMonCollat)*100).toFixed(2):null;
-  const avgAroc=arocsV.length?(arocsV.reduce((s,v)=>s+v,0)/arocsV.length).toFixed(1):0;
-  const avgDTE=opts.length?Math.round(opts.reduce((s,t)=>s+t.dte,0)/opts.length):0;
+  const monthlyROC=thisMonCollat>0?((thisMonNet/thisMonCollat)*100):null;
+  const mrocColor=monthlyROC!=null&&monthlyROC>=0?'var(--pos)':'var(--neg)';
+  const mrocLabel=monthlyROC!=null?(monthlyROC>=0?'+':'')+monthlyROC.toFixed(2)+'%':'—';
 
-  const totalNetPnl=closed.reduce((s,t)=>s+(t.pnlNet!=null?t.pnlNet:0),0);
+  // Monthly P&L data (last 6 months)
+  const mm={};
+  closed.forEach(t=>{if(!t.closedDate)return;const mo=t.closedDate.slice(0,7);const v=t.pnlNet!=null?t.pnlNet:netPnl(t)||0;mm[mo]=(mm[mo]||0)+v;});
+  const months=Object.keys(mm).sort().slice(-6);
+  const mPnl=months.map(mo=>+mm[mo].toFixed(2));
+  const mMax=Math.max(...mPnl.map(v=>Math.abs(v)))||1;
 
-  // Efficiency card — 2×2 grid + monthly ROC bar
-  const monthlyROCColor=monthlyROC!=null&&parseFloat(monthlyROC)>=0?'var(--pos)':'var(--neg)';
-  document.getElementById('ana-cards').innerHTML=`
-    <div class="kpi-tile">
-      <div class="kpi-label">Prem efficiency</div>
-      <div class="kpi-value mono">${premEff}%</div>
-      <div class="kpi-sub">realized ÷ collected</div>
-    </div>
-    <div class="kpi-tile">
-      <div class="kpi-label">Cap efficiency</div>
-      <div class="kpi-value mono pos">${capEffTot}%</div>
-      <div class="kpi-sub">P&amp;L ÷ collateral</div>
-    </div>
-    <div class="kpi-tile">
-      <div class="kpi-label">Avg AROC</div>
-      <div class="kpi-value mono pos">${avgAroc}%</div>
-      <div class="kpi-sub">annualized return</div>
-    </div>
-    <div class="kpi-tile">
-      <div class="kpi-label">Avg DTE open</div>
-      <div class="kpi-value mono">${avgDTE}d</div>
-      <div class="kpi-sub">at time of open</div>
-    </div>
-  `;
-  // Monthly ROC inline below the grid
-  const anaCardsParent=document.getElementById('ana-cards');
-  if(monthlyROC!=null){
-    const rocBar=document.createElement('div');
-    rocBar.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:12px';
-    rocBar.innerHTML=`<div><div class="kpi-label" style="margin-bottom:2px">Monthly ROC</div><div style="font-size:12px;color:var(--ink3)">net P&amp;L ÷ collateral · ${new Date().toLocaleString('default',{month:'short',year:'2-digit'})}</div></div><div class="mono" style="font-size:22px;font-weight:700;color:${monthlyROCColor}">${monthlyROC}%</div>`;
-    anaCardsParent.after(rocBar);
+  // Cumulative P&L data sliced by range
+  const sc=[...closed].filter(t=>t.closedDate).sort((a,b)=>new Date(a.closedDate)-new Date(b.closedDate));
+  let cumRun=0;const cumAll=sc.map(t=>{cumRun+=t.pnl||0;return+cumRun.toFixed(2);});
+  const cumLabels=sc.map(t=>t.closedDate.slice(5));
+  function sliceCum(r){
+    const n={ALL:sc.length,'YTD':sc.filter(t=>t.closedDate.startsWith(new Date().getFullYear()+'')).length,'3M':Math.min(sc.length,Math.ceil(sc.length*0.5)),'1M':Math.min(sc.length,Math.ceil(sc.length*0.2)),'1W':Math.min(sc.length,Math.ceil(sc.length*0.08))}[r]||sc.length;
+    const sl=cumAll.slice(-n);const lb=cumLabels.slice(-n);
+    return{data:sl,labels:lb};
   }
+  const{data:cumData,labels:cumLbls}=sliceCum(_anaRange);
+  const cumTotal=cumData.length?cumData[cumData.length-1]:0;
+  const cumChange=cumData.length>1?cumTotal-cumData[0]:0;
 
+  // Tickers — P&L by ticker, sliced by range
   const tickers=[...new Set(opts.map(t=>t.ticker))];
-  const tC=[C.blue,C.teal,C.amber,C.coral,C.purple];
-  document.getElementById('cap-rows').innerHTML=tickers.map((tk,i)=>{
+  function sliceTicker(r){
+    const now=new Date();let fromDate='';
+    if(r==='1W'){fromDate=new Date(now-7*86400000).toISOString().slice(0,10);}
+    else if(r==='1M'){fromDate=new Date(now-30*86400000).toISOString().slice(0,10);}
+    else if(r==='3M'){fromDate=new Date(now-90*86400000).toISOString().slice(0,10);}
+    else if(r==='YTD'){fromDate=now.getFullYear()+'-01-01';}
+    return fromDate?opts.filter(t=>t.closedDate&&t.closedDate>=fromDate):opts;
+  }
+  const tickerOpts=sliceTicker(_tickerRange);
+  const tickerPnl=tickers.map(tk=>({t:tk,v:+tickerOpts.filter(t=>t.ticker===tk).reduce((s,t)=>s+(t.pnl||0),0).toFixed(0)})).sort((a,b)=>b.v-a.v);
+  const maxTickerPnl=Math.max(...tickerPnl.map(x=>Math.abs(x.v)))||1;
+
+  // Efficiency by ticker
+  const effByTicker=tickers.map(tk=>{
     const tc=opts.filter(t=>t.ticker===tk);
     const pl=tc.reduce((s,t)=>s+(t.pnl||0),0);
     const cap=tc.reduce((s,t)=>s+t.strike*t.contracts*100,0);
-    const ce=cap>0?((pl/cap)*100).toFixed(2):'-';
     const pe=tc.reduce((s,t)=>s+t.totalCredit,0);
-    const peff=pe>0?((pl/pe)*100).toFixed(1):'-';
-    const ar=tc.filter(t=>t.dte>0).map(t=>aroc(t)).filter(v=>v!==null);
-    const avgA=ar.length?(ar.reduce((s,v)=>s+v,0)/ar.length).toFixed(1):'-';
-    return`<div class="stat-row"><div style="font-size:14px;font-weight:700;color:${tC[i%5]}">${tk}</div>
-      <div class="stat-nums">
-        <div class="stat-num"><div class="stat-num-label">P&L/Collat</div><div class="stat-num-val ${parseFloat(ce)>=0?'pos':'neg'}">${ce}%</div></div>
-        <div class="stat-num"><div class="stat-num-label">Prem eff</div><div class="stat-num-val">${peff}%</div></div>
-        <div class="stat-num"><div class="stat-num-label">AROC</div><div class="stat-num-val pos">${avgA}%</div></div>
-        ${(()=>{const tmo=tc.filter(t=>t.closedDate&&t.closedDate.slice(0,7)===new Date().toISOString().slice(0,7));const tmoNet=tmo.reduce((s,t)=>s+(t.pnlNet!=null?t.pnlNet:t.pnl||0),0);const tmoCol=tmo.reduce((s,t)=>s+t.strike*t.contracts*100,0);const mRoc=tmoCol>0?((tmoNet/tmoCol)*100).toFixed(2):null;return mRoc!=null?`<div class="stat-num"><div class="stat-num-label">Mo. ROC</div><div class="stat-num-val ${parseFloat(mRoc)>=0?'pos':'neg'}">${mRoc}%</div></div>`:'';})()}
-      </div></div>`;
-  }).join('')||'<div class="empty">No closed options data</div>';
+    const peff=pe>0?+(pl/pe*10).toFixed(1):0; // $/contract synthetic
+    const capEf=cap>0?+(pl/cap*100).toFixed(2):0;
+    return{t:tk,peff,capEf};
+  });
+  const maxPeff=Math.max(...effByTicker.map(x=>Math.abs(x.peff)))||1;
+  const maxCapEf=Math.max(...effByTicker.map(x=>Math.abs(x.capEf)))||1;
 
-  const tickerPnl=tickers.map(tk=>+closed.filter(t=>t.ticker===tk).reduce((s,t)=>s+(t.pnl||0),0).toFixed(2));
-  document.getElementById('leg-ticker').innerHTML=tickers.map((tk,i)=>`<span><span class="legend-dot" style="background:${tC[i%5]}"></span>${tk}</span>`).join('');
-  dc('ticker');
-  if(tickers.length)_charts['ticker']=new Chart(document.getElementById('c-ticker'),{type:'bar',data:{labels:tickers,datasets:[{data:tickerPnl,backgroundColor:tickerPnl.map(v=>v>=0?C.pos+'99':C.neg+'99'),borderColor:tickerPnl.map(v=>v>=0?C.pos:C.neg),borderWidth:1,borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>'$'+ctx.parsed.y.toFixed(2)}}},scales:{x:{ticks:{color:C.text,font:{size:12}},grid:{display:false}},y:{ticks:{color:C.text,font:{size:10},callback:v=>'$'+v},grid:{color:C.grid}}}}});
-
+  // Strategy mix
   const allT=[...closed,...open];
-  const typeCount={};allT.forEach(t=>typeCount[t.type]=(typeCount[t.type]||0)+1);
-  const typeKeys=Object.keys(typeCount);const tcc=[C.blue,C.teal,C.amber,C.coral,C.purple,'#97C459'];
-  document.getElementById('leg-strat').innerHTML=typeKeys.map((k,i)=>`<span><span class="legend-dot" style="background:${tcc[i%6]}"></span>${k} ${typeCount[k]}</span>`).join('');
-  dc('strat');
-  if(typeKeys.length)_charts['strat']=new Chart(document.getElementById('c-strat'),{type:'doughnut',data:{labels:typeKeys,datasets:[{data:typeKeys.map(k=>typeCount[k]),backgroundColor:tcc.slice(0,typeKeys.length),borderWidth:0,hoverOffset:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.label+': '+ctx.parsed}}}}});
+  const typeMap={};allT.forEach(t=>{const v=opts.filter(o=>o.type===t.type).reduce((s,o)=>s+(o.pnl||0),0);typeMap[t.type]={count:(typeMap[t.type]?.count||0)+1,pnl:v};});
+  const typeKeys=Object.keys(typeMap).filter(k=>typeMap[k].count>0);
+  const maxStratPnl=Math.max(...typeKeys.map(k=>Math.abs(typeMap[k].pnl)))||1;
+  const stratColors=['var(--accent)','var(--pos)','var(--warn)','var(--neg)','var(--blue)','#97C459'];
 
+  // Outcomes
   const outcomes={};closed.forEach(t=>{if(t.outcome)outcomes[t.outcome]=(outcomes[t.outcome]||0)+1;});
-  const outKeys=Object.keys(outcomes).filter(k=>outcomes[k]>0);
-  const outColors=['#85B7EB','#5DCAA5','#F09595','#9090a8'];
-  document.getElementById('leg-outcome').innerHTML=outKeys.map((k,i)=>`<span><span class="legend-dot" style="background:${outColors[i%4]}"></span>${k} ${outcomes[k]}</span>`).join('');
-  dc('outcome');
-  if(outKeys.length)_charts['outcome']=new Chart(document.getElementById('c-outcome'),{type:'doughnut',data:{labels:outKeys,datasets:[{data:outKeys.map(k=>outcomes[k]),backgroundColor:outColors.slice(0,outKeys.length),borderWidth:0,hoverOffset:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.label+': '+ctx.parsed}}}}});
+  const outKeys=['Expired','Closed','Assigned','Sold'].filter(k=>outcomes[k]>0);
+  const outTotal=outKeys.reduce((s,k)=>s+(outcomes[k]||0),0)||1;
+  const outColors=[{k:'Expired',c:'var(--pos)'},{k:'Closed',c:'var(--accent)'},{k:'Assigned',c:'var(--warn)'},{k:'Sold',c:'var(--neg)'}];
+
+  // ── Build HTML ──
+  document.getElementById('analytics-body').innerHTML=`
+
+  <!-- 1. Efficiency card -->
+  <div class="card" style="margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+      <div class="card-title" style="margin-bottom:0">Efficiency</div>
+      <span style="font-size:9px;font-weight:700;color:var(--ink3);letter-spacing:.8px">LAST 90 DAYS</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+      ${_effStatTile('Premium efficiency',premEff+'%','premium kept vs collected','var(--pos)')}
+      ${_effStatTile('Capital efficiency',capEffTot+'%','net P&L / avg deployed','var(--accent)')}
+      ${_effStatTile('Avg ROC',avgAroc+'%','per trade','var(--pos)')}
+      ${_effStatTile('Avg DTE (open)',avgDTE+'d','days to expiry','var(--ink)')}
+    </div>
+    <div style="padding:8px 10px;background:var(--chip);border-radius:8px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+        <span style="font-size:11px;font-weight:600;color:var(--ink3)">Monthly ROC</span>
+        <span class="mono" style="font-size:15px;font-weight:700;color:${mrocColor}">${mrocLabel}</span>
+      </div>
+      <div style="display:flex;align-items:flex-end;gap:3px;height:22px">
+        ${months.length?months.map(mo=>{const v=mm[mo]||0;const h=Math.abs(v)/mMax*18;const col=v>=0?'var(--pos)':'var(--neg)';const lbl=mo.slice(5);return`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px"><div style="width:70%;height:${h}px;background:${col};border-radius:2px;min-height:1px"></div><span style="font-size:7px;color:var(--ink3);font-family:'JetBrains Mono',monospace">${new Date(mo+'-01').toLocaleString('default',{month:'short'})}</span></div>`;}).join(''):'<span style="font-size:11px;color:var(--ink3)">No data</span>'}
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Monthly net P&L bar chart -->
+  <div class="card" style="margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+      <div class="card-title" style="margin-bottom:0">Monthly net P&amp;L</div>
+      <span style="font-size:9px;font-weight:700;color:var(--ink3);letter-spacing:.8px">LAST 6 MONTHS</span>
+    </div>
+    <div style="display:flex;align-items:flex-end;gap:6px;height:110px;padding-top:14px">
+      ${months.length?months.map(mo=>{const v=mm[mo]||0;const h=Math.abs(v)/mMax*70;const pos=v>=0;const col=pos?'var(--pos)':'var(--neg)';const lbl=pos?'+'+Math.round(v):''+Math.round(v);const mshort=new Date(mo+'-01').toLocaleString('default',{month:'short'});return`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
+          <span class="mono" style="font-size:10px;color:${col};white-space:nowrap">${lbl}</span>
+          <div style="width:78%;height:${Math.max(2,h)}px;background:${col};border-radius:3px;${pos?'margin-top:auto':'margin-top:0'}"></div>
+          <span style="font-size:9px;color:var(--ink3);font-family:'JetBrains Mono',monospace">${mshort}</span>
+        </div>`;}).join(''):'<div style="color:var(--ink3);font-size:12px;margin:auto">No closed trades</div>'}
+    </div>
+  </div>
+
+  <!-- 3. Cumulative P&L -->
+  <div class="card" style="margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <div class="card-title" style="margin-bottom:0">Cumulative P&amp;L</div>
+      <div style="display:flex;gap:3px">${_rangePicker('ana-cum',_anaRange,'setAnaRange')}</div>
+    </div>
+    ${cumTotal?`<div class="mono" style="font-size:26px;font-weight:700;color:var(--ink)">$${Math.abs(cumTotal).toLocaleString('en-US',{maximumFractionDigits:0})}</div>
+    <div style="font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;margin-bottom:8px">${_anaRange} · <span style="color:${cumChange>=0?'var(--pos)':'var(--neg)'}">${cumChange>=0?'+':''}$${Math.abs(cumChange).toLocaleString('en-US',{maximumFractionDigits:0})}</span> change</div>`:'<div style="font-size:12px;color:var(--ink3);margin-bottom:8px">No data yet</div>'}
+    <div style="height:80px"><canvas id="c-ana-pnl"></canvas></div>
+  </div>
+
+  <!-- 4. P&L by ticker -->
+  <div class="card" style="margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div class="card-title" style="margin-bottom:0">P&amp;L by ticker</div>
+      <div style="display:flex;gap:3px">${_rangePicker('ana-tick',_tickerRange,'setTickerRange')}</div>
+    </div>
+    ${tickerPnl.length?tickerPnl.map(x=>_anaBarRow(x.t,x.v,maxTickerPnl,x.v>=0?'var(--pos)':'var(--neg)',(x.v>=0?'+':'')+x.v.toLocaleString('en-US',{maximumFractionDigits:0}))).join(''):'<div class="empty">No closed options</div>'}
+  </div>
+
+  <!-- 5. Efficiency by ticker -->
+  <div class="card" style="margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+      <div class="card-title" style="margin-bottom:0">Efficiency by ticker</div>
+      <span style="font-size:9px;font-weight:700;color:var(--ink3);letter-spacing:.8px">BY TICKER</span>
+    </div>
+    <div style="display:grid;grid-template-columns:44px 1fr 54px 1fr 54px;padding:4px 0;font-size:9px;font-family:'JetBrains Mono',monospace;color:var(--ink3);text-transform:uppercase;letter-spacing:.8px;font-weight:700;border-bottom:1px solid var(--border);margin-bottom:6px">
+      <span>Ticker</span><span>Premium</span><span style="text-align:right">$/c</span><span style="padding-left:8px">Capital</span><span style="text-align:right">ROC</span>
+    </div>
+    ${effByTicker.map(e=>`<div style="display:grid;grid-template-columns:44px 1fr 54px 1fr 54px;align-items:center;gap:3px;margin-bottom:7px">
+      <span class="mono" style="font-size:11px;font-weight:700;color:var(--ink)">${e.t}</span>
+      <div style="height:6px;background:var(--chip);border-radius:3px;overflow:hidden"><div style="width:${Math.min(100,Math.abs(e.peff)/maxPeff*100)}%;height:100%;background:${e.peff>=0?'var(--pos)':'var(--neg)'};border-radius:3px"></div></div>
+      <div style="text-align:right"><span class="mono" style="font-size:10px;color:${e.peff>=0?'var(--pos)':'var(--neg)'}">$${e.peff}</span></div>
+      <div style="height:6px;background:var(--chip);border-radius:3px;overflow:hidden;margin-left:8px"><div style="width:${Math.min(100,Math.abs(e.capEf)/maxCapEf*100)}%;height:100%;background:${e.capEf>=0?'var(--accent)':'var(--neg)'};border-radius:3px"></div></div>
+      <div style="text-align:right"><span class="mono" style="font-size:10px;color:${e.capEf>=0?'var(--accent)':'var(--neg)'}">${e.capEf}%</span></div>
+    </div>`).join('')||'<div class="empty">No data</div>'}
+  </div>
+
+  <!-- 6+7. Strategy mix + Outcome -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+    <div class="card" style="margin-bottom:0">
+      <div class="card-title">Strategy mix</div>
+      ${typeKeys.map((k,i)=>`<div style="margin-bottom:5px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+          <span style="font-size:10px;font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--ink2)">${k}</span>
+          <span class="mono" style="font-size:10px;color:${stratColors[i%6]}">${typeMap[k].pnl>=0?'+':''}\$${Math.abs(typeMap[k].pnl).toLocaleString('en-US',{maximumFractionDigits:0})}</span>
+        </div>
+        <div style="height:4px;background:var(--chip);border-radius:2px;overflow:hidden"><div style="width:${Math.min(100,Math.abs(typeMap[k].pnl)/maxStratPnl*100)}%;height:100%;background:${stratColors[i%6]};border-radius:2px"></div></div>
+      </div>`).join('')||'<div class="empty" style="font-size:11px">No data</div>'}
+    </div>
+    <div class="card" style="margin-bottom:0">
+      <div class="card-title">Outcome</div>
+      ${outKeys.length?`
+      <div style="display:flex;height:10px;border-radius:5px;overflow:hidden;margin-bottom:10px">
+        ${outColors.filter(o=>outcomes[o.k]>0).map(o=>`<div style="width:${(outcomes[o.k]/outTotal*100).toFixed(1)}%;background:${o.c}"></div>`).join('')}
+      </div>
+      ${outColors.filter(o=>outcomes[o.k]>0).map(o=>`<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+        <div style="width:8px;height:8px;background:${o.c};border-radius:2px;flex-shrink:0"></div>
+        <span style="font-size:11px;color:var(--ink2);flex:1">${o.k}</span>
+        <span class="mono" style="font-size:11px;color:var(--ink3)">${outcomes[o.k]}</span>
+      </div>`).join('')}`:'<div class="empty" style="font-size:11px">No data</div>'}
+    </div>
+  </div>
+  `;
+
+  // Chart.js: cumulative P&L area chart
+  dc('ana-pnl');
+  if(cumData.length>1){
+    _charts['ana-pnl']=new Chart(document.getElementById('c-ana-pnl'),{
+      type:'line',
+      data:{labels:cumLbls,datasets:[{data:cumData,borderColor:C.pos,backgroundColor:'rgba(93,202,165,0.15)',fill:true,tension:.35,pointRadius:0,borderWidth:2}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>'$'+ctx.parsed.y.toFixed(0)}}},scales:{x:{display:false},y:{display:false,grid:{display:false}}}}
+    });
+  }
 }
 
 // ═══════════════════ LOG FORM ═══════════════════
@@ -1064,21 +1196,29 @@ function updateLogCalc(){
   const openDate=document.getElementById('lf-openDate')?.value||new Date().toISOString().slice(0,10);
   const dte=expiry?calcDTE(expiry,openDate):0;
 
-  if(!premium&&!strike){calcEl.style.display='none';return;}
   calcEl.style.display='block';
 
   const totalPremium=+(premium*contracts*100).toFixed(2);
-  const collateral=['CSP','Bull Put'].includes(type)?+(strike*contracts*100).toFixed(2):0;
+  const collateral=['CSP','Bull Put','Diagonal'].includes(type)?+(strike*contracts*100).toFixed(2):0;
   const yieldPct=collateral>0?+((totalPremium/collateral)*100).toFixed(2):null;
-  const annPct=yieldPct!=null&&dte>0?+((yieldPct*(365/dte))).toFixed(1):null;
+  const annPct=yieldPct!=null&&dte>0?+(yieldPct*(365/dte)).toFixed(1):null;
 
-  calcEl.innerHTML=`<div class="card-title" style="margin-bottom:8px">Live estimate</div>
-    <div class="calc-grid">
-      <div class="calc-item"><div class="calc-item-label">Premium</div><div class="calc-item-val mono pos">$${totalPremium.toFixed(2)}</div></div>
-      ${collateral>0?`<div class="calc-item"><div class="calc-item-label">Collateral</div><div class="calc-item-val mono">$${collateral.toLocaleString('en-US',{maximumFractionDigits:0})}</div></div>`:'<div></div>'}
-      ${yieldPct!=null?`<div class="calc-item"><div class="calc-item-label">Yield</div><div class="calc-item-val mono">${yieldPct}%</div></div>`:'<div></div>'}
-      ${annPct!=null?`<div class="calc-item"><div class="calc-item-label">Annualised</div><div class="calc-item-val mono ${annPct>=0?'pos':''}">${annPct}%</div></div>`:'<div></div>'}
-    </div>`;
+  const cell=(lbl,val,color)=>`<div style="padding:10px 12px">
+    <div style="font-size:9px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px">${lbl}</div>
+    <div class="mono" style="font-size:18px;font-weight:700;color:${color||'var(--ink)'}">${val}</div>
+  </div>`;
+
+  calcEl.innerHTML=`<div class="card" style="margin-bottom:0;border-left:3px solid var(--accent)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+      <div class="card-title" style="margin-bottom:0">Live calc</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--border)">
+      ${cell('Premium',totalPremium?'$'+totalPremium.toFixed(2):'—','var(--pos)')}
+      ${cell('Collateral',collateral?'$'+collateral.toLocaleString('en-US',{maximumFractionDigits:0}):'—','')}
+      ${cell('Yield',yieldPct!=null?yieldPct+'%':'—','var(--accent)')}
+      ${cell('Annualised',annPct!=null?annPct+'%':'—','var(--accent)')}
+    </div>
+  </div>`;
 }
 function calcLogDTE(){
   const exp=document.getElementById('lf-expiry')?.value;
@@ -1901,7 +2041,7 @@ function handleImport(event){
 function parseCSVLine(line){const r=[];let cur='';let inQ=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(inQ&&line[i+1]==='"'){cur+='"';i++;}else inQ=!inQ;}else if(c===','&&!inQ){r.push(cur.trim());cur='';}else cur+=c;}r.push(cur.trim());return r;}
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzcwOTU1MjMnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzcwOTYxOTInO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
 
 // ═══════════════════ INIT ═══════════════════
 load();
