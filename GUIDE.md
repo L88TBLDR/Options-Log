@@ -19,96 +19,89 @@ Options Log is a **Progressive Web App (PWA)** — it runs in your browser but i
 
 ### iPhone / iPad (Safari only)
 1. Open **Safari** and go to `https://l88tbldr.github.io/Options-Log/`
-2. Tap the **Share** button (box with arrow pointing up) at the bottom of the screen
+2. Tap the **Share** button (box with arrow pointing up) at the bottom of Safari
 3. Scroll down and tap **Add to Home Screen**
-4. Change the name to **Options Log** if it isn't already, then tap **Add**
+4. Confirm the name is **Options Log**, then tap **Add**
 5. The app icon appears on your home screen — open it from there for the full-screen experience
 
-> **Note:** If you previously had an older version installed, delete it first and re-add to pick up the latest icon and name.
+> **Note:** If you had an older version installed, delete it first and re-add to pick up the latest icon and name.
 
 ### Android (Chrome)
 1. Open Chrome and visit the URL above
 2. Tap the three-dot menu → **Add to Home screen** → **Install**
 
-### Desktop
-Visit the URL in any browser. Chrome/Edge will show an install button in the address bar.
-
 ---
 
 ## 2. First-Time Setup
 
-Before logging trades, configure these settings once. Tap **Settings** (gear icon, bottom nav).
+Before logging trades, configure these settings. Tap the **Settings** tab (gear icon, bottom nav).
 
 ### Profile — Your Name
 Tap the profile card at the top of Settings.
-- Enter your first name. It appears in the dashboard greeting ("Good morning, Leon.").
+- Enter your display name. It appears in the dashboard greeting.
+
+### Appearance
+**Settings → Appearance** — switch between Dark and Light theme.
 
 ### Capital — Account Balance
 **Settings → Capital**
-This is critical — many calculations depend on it.
 
 | Field | What to enter |
 |---|---|
-| **USD Account** | Your current total account value in USD (cash + unrealised value) |
-| **SGD Account** | Enable if you hold a separate SGD-denominated account |
-| **Total deposited** | Your original capital contribution (used to calculate portfolio return %) |
-| **Margin %** | Your broker's margin requirement (default 20%) |
+| **Current portfolio value (USD)** | Your total account equity today — cash plus any unrealised value. This drives the Capital Utilisation widget and Capital Efficiency metric. |
+| **Total deposited (USD)** | All funds you personally deposited. Used as a reference to show your overall portfolio return %. |
 
-> Keep your account balance updated periodically — the Capital Utilisation and Capital Efficiency metrics are based on this number.
+> Keep your portfolio value updated periodically as your account grows.
 
 ### Monthly Target
 **Settings → Monthly target**
 
-Choose between:
-- **Fixed $** — e.g. $500/month net P&L goal
-- **% of equity** — e.g. 1% of your account balance per month
+Choose your mode and target:
+- **Fixed $** — e.g. target $500 net P&L each month
+- **% of equity** — e.g. target 1% of your account per month
 
-The dashboard shows your progress toward this target in the Monthly target KPI tile.
+The dashboard Monthly Target tile tracks your progress toward this goal in real time.
 
 ### Fee Plan
-**Settings → Fee plan**
+**Settings → Fee plan** — select your broker's commission structure:
 
-Select your broker's commission structure. Pre-configured plans:
-
-| Plan | Best for |
+| Plan | Description |
 |---|---|
-| **Tiger Ultra-low** | Tiger Brokers ultra-low tier ($0.65/contract) |
-| **Tiger Regular** | Tiger Brokers regular tier (min $2.99/order) |
-| **Moomoo Fixed** | Moomoo fixed rate (min $1.99) |
-| **IBKR** | Interactive Brokers ($0.65/contract) |
+| **Tiger Ultra-low** | $0.65/contract (Tiger ultra-low tier) |
+| **Tiger Regular** | Min $2.99/order |
+| **Moomoo Fixed** | Min $1.99/order |
+| **IBKR** | $0.65/contract |
 | **Commission-free** | Zero commission (pass-through fees still apply) |
 | **Custom** | Enter your own rates manually |
 
-Toggle **GST** on/off and set the GST rate if applicable (Singapore users: 9%).
+Toggle **GST** on/off and set the GST rate (Singapore users: 9%).
 
-The app automatically calculates open and close leg fees for every trade based on this plan.
+The app auto-calculates open and close leg fees on every trade based on this plan.
 
 ### Log Form Fields
-**Settings → Log form fields**
+**Settings → Log form fields** — choose which optional fields appear when logging a trade. Recommended: enable **IV%**, **Delta**, and **Notes**.
 
-Toggle which optional fields appear when logging a trade. Recommended to enable:
-- **IV%** — implied volatility at entry (useful for analytics)
-- **Delta** — your directional exposure
-- **Notes** — for recording your thesis or exit reason
+### History Columns
+**Settings → History columns** — toggle which columns appear in the History tab.
 
 ---
 
 ## 3. Logging a Trade
 
-Tap **Log** (+ icon, bottom nav).
+Tap the **Log** tab (+ icon, bottom nav).
 
 ### Step 1 — Select a Strategy
-Tap the strategy chip that matches your trade:
+Tap the strategy chip:
 
-| Strategy | What it means |
+| Strategy | Description |
 |---|---|
-| **CSP** | Cash-Secured Put — sell a put, secure with cash |
-| **CC** | Covered Call — sell a call against stock you own |
-| **PMCC** | Poor Man's Covered Call — long LEAP + short call |
+| **CSP** | Cash-Secured Put |
+| **CC** | Covered Call |
+| **PMCC** | Poor Man's Covered Call |
 | **Diagonal** | Calendar diagonal spread |
-| **Bull Put** | Bull Put spread (sell higher put, buy lower put) |
-| **Bear Call** | Bear Call spread (sell lower call, buy higher call) |
-| **Stock Sale** | Sale of underlying shares (for completing a wheel) |
+| **Bull Put** | Bull Put spread |
+| **Bear Call** | Bear Call spread |
+| **Stock Sale** | Sale of underlying shares (e.g. completing a wheel) |
 
 ### Step 2 — Fill in the Fields
 
@@ -116,228 +109,222 @@ Tap the strategy chip that matches your trade:
 |---|---|
 | **Ticker** | Stock symbol, auto-capitalised (e.g. NVDA) |
 | **Open date** | Date you entered the position |
-| **Expiry** | Option expiry date — DTE auto-calculates |
+| **Expiry** | Option expiry date — DTE calculates automatically |
 | **Strike** | Strike price in dollars |
-| **Premium/sh** | Credit received per share (e.g. $1.32 for a $132 premium on 1 contract) |
-| **Contracts** | Number of contracts (1 contract = 100 shares) |
-| **IV%** | Implied volatility at entry (find this on your broker app) |
+| **Premium/sh** | Credit received per share (e.g. enter 1.32 for a $132 premium on 1 contract) |
+| **Contracts** | Number of contracts (1 = 100 shares) |
+| **IV%** | Implied volatility at entry (from your broker) |
 | **Delta** | Delta at entry — use negative for puts (e.g. -0.25) |
-| **Notes** | Optional — record your reasoning or target exit |
+| **Notes** | Optional — record your thesis or exit plan |
 
 ### Step 3 — Review the Live Calculator
-The **Live calc** card below the form updates as you type:
+The **Live calc** card updates as you type:
 
 | Metric | Formula |
 |---|---|
 | **Premium** | Premium × Contracts × 100 |
-| **Collateral** | Strike × Contracts × 100 (for puts) |
-| **Yield** | Premium / Collateral × 100% |
-| **Annualised** | Yield × (365 / DTE) |
+| **Collateral** | Strike × Contracts × 100 (for put strategies) |
+| **Yield** | Premium ÷ Collateral × 100% |
+| **Annualised** | Yield × (365 ÷ DTE) |
 
 ### Step 4 — Log & Save
-Tap **Log & save**. The trade appears in your open positions and History.
+Tap **Log & save**. The trade appears in open positions and History immediately.
 
 ---
 
 ## 4. Managing Open Positions
 
 ### Closing a Position
-From the **Dashboard** open positions list or **History** tab:
-1. Tap the **C** button on the right of any open trade
+From the **Dashboard** open positions list or the **History** tab:
+1. Tap the **Close** button on the trade row
 2. Fill in the Close modal:
-   - **Close date** — date you exited
+   - **Close date** — when you exited
    - **Outcome** — Expired / Closed / Assigned / Sold
-   - **Close cost per contract** — the buyback cost per share (0 if expired worthless)
+   - **Close cost per contract** — your buyback cost per share; enter 0 if expired worthless
 3. Tap **Confirm**
 
 The app calculates:
-- **P&L** = (Premium - Close cost) × Contracts × 100
-- **Net P&L** = P&L minus total fees (open + close leg)
+- **P&L** = (Premium − Close cost) × Contracts × 100
+- **Net P&L** = P&L minus total broker fees
 
 ### Editing a Trade
-Tap the **E** button to open the Edit modal. You can update any field including:
-- Strike, premium, contracts, expiry
-- IV, delta, notes
-- **Fee overrides** — manually set the open or close leg fee if needed
+Tap the **Edit** button on any trade row to update any field, including overriding fees manually.
 
-### Deleting a Trade (Mobile)
-On the Dashboard open positions list, **swipe left** on any row to reveal the Delete button.
+### Deleting a Trade
+Tap **Del** on any trade row, or on mobile swipe left on an open position in the Dashboard.
 
 ---
 
 ## 5. Dashboard Explained
 
-### Greeting Header
-Shows your name and time-of-day greeting. Set your name in Settings → Profile.
+### Greeting
+Shows your name and a time-of-day greeting. Set your name via Settings → profile card.
 
-### KPI Tiles (2×2 grid)
+### KPI Tiles (2×2)
 
 **Gross P&L**
-- Top number: total realised gross P&L across all closed options trades
-- Sub-line: total fees paid
-- Net line: gross P&L minus all fees
-- Sparkline: cumulative P&L trajectory over time
+- Total realised gross P&L across all closed options trades
+- Sub-line shows total fees paid
+- Net line shows gross P&L minus all fees
+- Sparkline shows cumulative P&L trajectory
 
 **Win Rate**
-- Percentage of closed options trades that were profitable (P&L > 0)
-- Donut shows fill proportion; percentage shown inside
+- % of closed trades that were profitable
+- Percentage shown inside the donut ring
 - Sub-line: wins vs losses count
 
 **Open Premium**
-- Total credit collected across all currently open positions
-- Progress bar: open premium as a % of your monthly target
+- Total credit collected across all open positions
+- Progress bar: open premium as % of your monthly target
 - Sub-line: number of open positions
 
 **Monthly Target**
 - Net P&L realised this calendar month
-- Donut shows % of your monthly target achieved
+- Donut shows % of monthly target achieved
 - Sub-line: target amount
 
-### Capital Utilisation Widget
-Shows how much of your equity is deployed in open options positions.
+### Capital Utilisation
 
 | Row | Meaning |
 |---|---|
-| **Deployed / Equity** | Notional value of open positions / your total account equity |
-| **Available** | Equity minus deployed (negative = leveraged beyond account size) |
-| **Total deposited** | Your original capital contribution |
-| **Return on portfolio** | (Current equity − Deposited) / Deposited % |
+| **Deployed / Equity** | Total notional of open positions vs your account equity |
+| **Available** | Equity minus deployed (negative = leveraged beyond equity) |
+| **Total deposited** | Your original capital contributions |
+| **Return on portfolio** | (Current equity − Deposited) ÷ Deposited % |
 
-The donut arc shows utilisation %. Over 100% means you are using margin/leverage (intentional for some strategies). The colour shifts amber at 60% and red at 80%.
+The donut shows utilisation %. Colour shifts amber above 60% and red above 80%. Over 100% means you are using leverage/margin intentionally.
 
-### Open Positions List
-All currently open trades with strike, expiry, DTE, and credit collected. Tap **E** to edit, **C** to close.
+### Open Positions
+All currently open trades. **# OPEN** badge on the card title shows the count. Tap **Edit** or **Close** on any row.
 
 ### Cumulative P&L Chart
-(Analytics tab) Shows the total realised P&L growth curve over time.
+Running total of realised P&L over time. Full interactive version is in the Analytics tab with range pickers.
 
 ---
 
 ## 6. Analytics Explained
 
-### Efficiency Card
+### Efficiency Stats
 
 **Premium Efficiency**
-- Net P&L ÷ Total premium collected × 100%
-- Answers: "Of every $1 I collected in premium, how much did I keep?"
-- Higher is better. 100% = all trades expired worthless with no buyback cost.
+Net P&L ÷ Total premium collected. "Of every $1 I collected, how much did I keep after buybacks and fees?" Higher is better; 100% = all trades expired worthless.
 
 **Capital Efficiency**
-- Total net P&L ÷ Current equity × 100%
-- Answers: "What return am I generating on my account balance?"
-- This is your overall account-level return, net of all fees.
+Total net P&L ÷ Current equity. Your overall account-level net return since you started.
 
 **Avg ROC** (Return on Collateral)
-- Average of (Net P&L / Collateral × 365 / DTE) across all closed trades
-- Annualised return per trade, normalised for time and capital deployed.
+Average annualised return per trade: (Net P&L ÷ Collateral) × (365 ÷ DTE). Normalises trades of different sizes and durations.
 
 **Avg DTE**
-- Average days-to-expiry at the time you opened positions.
-- Useful for understanding your typical time horizon.
+Average days-to-expiry at open across all closed trades. Shows your typical time horizon.
 
 ### Monthly ROC Bar Chart
-Each bar = one calendar month's net P&L ÷ equity at the **start** of that month.
-- Because equity grows as you profit, each month's ROC uses the equity base at the beginning of that specific month — not today's equity.
-- This gives an accurate picture of compounding returns over time.
-- Last 6 months shown. Bar height is relative to your best month.
+One bar per calendar month. Each bar = that month's net P&L ÷ equity **at the start of that month** (deposited + all net P&L closed before it). This correctly captures compounding — as your account grows, the denominator grows too.
 
-### Monthly Net P&L Chart
-Gross bar chart showing net realised P&L per calendar month (last 6 months). Useful for spotting seasonal patterns or drawdown months.
+### Monthly Net P&L
+Bar chart showing net realised P&L per month (last 6 months). Useful for spotting seasonal patterns or drawdown months.
 
-### Cumulative P&L (with Range Picker)
-The running total of all realised P&L since you started.
-- Use the range buttons to zoom: **1W**, **1M**, **3M**, **YTD**, **ALL**
-- The range is date-based (3M = last 3 calendar months, not last 3 months worth of trades)
+### Cumulative P&L (Range Picker)
+Running total of all realised P&L. Use **1W / 1M / 3M / YTD / ALL** to zoom. Ranges are date-based, not trade-count-based — 3M always means the last 3 calendar months.
 
 ### P&L by Ticker
-Net P&L grouped by underlying stock. Shows which tickers are generating returns vs losses. Use the range picker to filter by time period.
+Net P&L grouped by stock. Use the range picker to filter by period.
 
 ### Efficiency by Ticker
-Two-column bar for each ticker:
-- **$/c** — net P&L per dollar of premium collected (higher = more efficient)
-- **ROC** — net P&L as % of collateral committed (annualised ROC)
+Two bars per ticker: premium efficiency ($/contract) and capital efficiency (ROC %). Identifies which underlyings are most productive.
 
 ### Strategy Mix
-Count and aggregate P&L per strategy type (CSP, CC, PMCC, etc.) including Stock Sales. Useful for understanding where your returns are coming from.
+Aggregate count and P&L by strategy type including Stock Sales.
 
 ### Outcome Breakdown
-Distribution of how your trades closed: Expired, Closed early, Assigned, or Sold. Ideal outcome for premium sellers = high Expired %.
+Distribution of how trades closed: Expired / Closed / Assigned / Sold. High Expired % is the ideal for premium sellers.
 
 ---
 
 ## 7. History Tab
 
-### Filtering
-Use the three chip rows at the top:
-- **Period** — All, This month, Last month, This year
-- **Outcome** — All, Expired, Closed, Assigned, Sold
+### Filters
+Three scrollable chip rows at the top:
+- **Period** — All, This month, Last month, This year, Custom date range
+- **Outcome** — All, Open, Expired, Closed, Assigned, Sold
 - **Strategy** — All, CSP, CC, PMCC, etc.
 
+Use the **Ticker** dropdown to further narrow to a single stock. Tap **Clear** to reset all filters.
+
+### Summary Bar
+Shows total trades, premium collected, and net P&L for the filtered view.
+
 ### Trade Rows
-Each closed trade shows all columns configured in **Settings → History columns**. Key columns:
+Each row shows the badge, ticker, dates, DTE, IV, P&L, net P&L, outcome, fees, and cap efficiency. Tap **Edit**, **Close** (open trades), or **Del** on any row.
 
-| Column | Meaning |
-|---|---|
-| **P&L** | Gross profit/loss on the trade |
-| **Net P&L** | P&L after all fees |
-| **P&L%** | Net P&L as % of premium collected |
-| **P&L/Collat** | Net P&L as % of capital at risk (capEff) |
-| **AROC** | Annualised return on collateral |
-| **Fees** | Total fees paid (open + close leg) |
+### Fee Override
+Use the **F** button to manually override open or close leg fees if your broker charged differently from the configured fee plan.
 
-### P&L Summary Bar
-The coloured bar at the top of History shows the month-by-month net P&L split — green for profit months, red for loss months.
-
-### Fee Editing
-Tap the **F** button on any closed trade to override the open or close leg fee if your broker charged differently from the pre-configured plan.
+### Batch Mode
+Tap **Select** to enter batch mode — select multiple trades to delete, recalc fees, or bulk-change type or outcome.
 
 ---
 
 ## 8. Importing Existing Records with AI
 
-If you have existing trade records in a spreadsheet, broker export, or notes app, you can use an AI assistant (Claude, ChatGPT, Gemini) to convert them into the app's format.
+If you have existing trade records in a spreadsheet or broker export, use an AI assistant to convert them to CSV format for import.
 
-### Step 1 — Gather Your Records
-Export or copy your existing trades. They can be in any format:
-- CSV from Excel or Google Sheets
-- Copy-paste from your broker's trade history
-- Manual notes
+### Step 1 — Clear the Sample Trades First
+The app ships with sample data. Before importing your real trades:
+1. Go to **Settings → Export, import & backup**
+2. Tap **Clear all data** and confirm
+3. This removes all sample trades and resets the app
 
-### Step 2 — Use This AI Prompt
+### Step 2 — Download the CSV Template
+1. Still in **Settings → Export, import & backup**
+2. Under *Trades only (CSV)*, tap **Download CSV template**
+3. Open the downloaded file — it shows the exact column headers and one example row
 
-Copy the prompt below and paste it into Claude (claude.ai) or ChatGPT, followed by your raw data:
+The columns are:
+```
+id, ticker, type, openDate, expiry, strike, premium, contracts, underlying,
+iv, delta, dte, notes, totalCredit, status, closedDate, closeCost, outcome,
+pnl, feesOpen, feesClose, feesTotal, pnlNet
+```
+
+### Step 3 — Use This AI Prompt
+
+Copy the prompt below into Claude (claude.ai) or ChatGPT, followed by your raw data:
 
 ---
 
 ```
-I want to import my options trading records into a web app called Options Log.
-Convert my records below into a valid JSON array matching exactly this schema.
-Return ONLY the JSON array with no explanation.
+I want to import my options trading history into a tracking app.
+Convert my records into CSV format with exactly these headers in this order:
 
-Field rules:
+id,ticker,type,openDate,expiry,strike,premium,contracts,underlying,iv,delta,dte,notes,totalCredit,status,closedDate,closeCost,outcome,pnl,feesOpen,feesClose,feesTotal,pnlNet
+
+Rules for each column:
 - id: sequential integer starting at 1
-- ticker: stock symbol string (e.g. "NVDA")
-- type: one of "CSP", "CC", "PMCC", "Diagonal", "Bull Put", "Bear Call", "Stock Sale"
-- openDate: "YYYY-MM-DD"
-- expiry: "YYYY-MM-DD" or null for Stock Sale
+- ticker: stock symbol (e.g. NVDA)
+- type: one of CSP / CC / PMCC / Diagonal / Bull Put / Bear Call / Stock Sale
+- openDate: YYYY-MM-DD
+- expiry: YYYY-MM-DD — leave blank for Stock Sale
 - strike: number (e.g. 170)
-- premium: number — premium per share (e.g. 1.32 means $132 for 1 contract)
-- contracts: integer number of contracts
-- underlying: stock price at open (0 if unknown)
-- iv: implied volatility as a percentage (e.g. 85.5), use 0 if unknown
-- delta: delta at open (negative for puts, e.g. -0.25), use 0 if unknown
+- premium: premium per share — e.g. 1.32 means $132 total for 1 contract
+- contracts: integer
+- underlying: stock price at open (use 0 if unknown)
+- iv: implied volatility as a % number (e.g. 85.5), use 0 if unknown
+- delta: delta at open, negative for puts (e.g. -0.25), use 0 if unknown
 - dte: integer days to expiry at open
-- notes: string (empty string if none)
-- totalCredit: premium × contracts × 100 (or for Stock Sale: premium × contracts)
-- status: "open" or "closed"
-- closedDate: "YYYY-MM-DD" or null if open
-- closeCost: cost to close per share (0 if expired worthless or still open)
-- outcome: "Expired", "Closed", "Assigned", or "Sold" — null if open
-- pnl: (premium - closeCost) × contracts × 100, null if open
-- feesOpen: estimated open leg brokerage fee in dollars (use 0 if unknown)
-- feesClose: estimated close leg fee (0 if expired/assigned or unknown)
+- notes: short text, empty if none
+- totalCredit: premium × contracts × 100 (for Stock Sale: premium × contracts)
+- status: open or closed
+- closedDate: YYYY-MM-DD — blank if still open
+- closeCost: close cost per share (0 if expired worthless or still open)
+- outcome: Expired / Closed / Assigned / Sold — blank if open
+- pnl: (premium - closeCost) × contracts × 100 — blank if open
+- feesOpen: open leg fee in dollars (use 0 if unknown)
+- feesClose: close leg fee in dollars (0 if expired/assigned or unknown)
 - feesTotal: feesOpen + feesClose
-- pnlNet: pnl - feesTotal, null if open
+- pnlNet: pnl - feesTotal — blank if open
+
+Return ONLY the CSV, starting with the header row. No explanation.
 
 My records:
 [PASTE YOUR DATA HERE]
@@ -345,20 +332,20 @@ My records:
 
 ---
 
-### Step 3 — Review the Output
-The AI will return a JSON array. Review it briefly to check:
-- Dates are in YYYY-MM-DD format
-- Types match the allowed values
-- Premium is per-share (not total — $1.32, not $132)
-- Open trades have `"status": "open"` and `null` values for close fields
+### Step 4 — Review the Output
+Quickly check:
+- Dates are YYYY-MM-DD format
+- `type` values match exactly (e.g. `CSP` not `cash secured put`)
+- `premium` is per-share, not total (e.g. `1.32` not `132`)
+- Open trades have blank `closedDate`, `outcome`, `pnl`, `pnlNet`
 
-### Step 4 — Import into Options Log
-1. Go to **Settings → Export, import & backup**
-2. Tap **Import JSON**
-3. Paste the JSON array from the AI
-4. Tap **Import** — trades are merged with any existing records
+### Step 5 — Import
+1. Save the AI output as a `.csv` file (or copy it into a text file with `.csv` extension)
+2. Go to **Settings → Export, import & backup**
+3. Under *Trades only (CSV)*, set the import mode to **Replace — overwrite trades only**
+4. Tap **Import from CSV** and select your file
 
-> **Tip:** If you're unsure about fees, set `feesOpen` and `feesClose` to 0. You can edit individual trades later using the **F** button in History or the **E** edit button.
+> **Tip:** If fees are unknown, leave them as 0. You can recalculate them later using **Settings → Fee plan** and the **Recalc fees** option in History batch mode.
 
 ---
 
@@ -366,33 +353,48 @@ The AI will return a JSON array. Review it briefly to check:
 
 **Settings → Export, import & backup**
 
-| Option | What it does |
+### Full Backup (Recommended)
+| Action | What it saves |
 |---|---|
-| **Export JSON** | Downloads your complete trade database as a JSON file — use for backup or migrating to a new device |
-| **Export CSV** | Downloads a spreadsheet-compatible CSV of all trades |
-| **Import JSON** | Restores or merges a previously exported JSON file |
-| **Clear all data** | Permanently deletes all trades and resets the app — cannot be undone |
+| **Export full backup** | All trades + all settings (fee plan, capital, target, etc.) as a JSON file |
+| **Import full backup** | Restores everything from a full backup JSON file |
 
-### Moving to a New Device
-1. On your old device: **Settings → Export JSON** and save/send the file
-2. On your new device: install the app, go to **Settings → Import JSON**, paste the file contents
+Use this to move to a new device or restore after a browser data clear.
+
+### Trades Only (CSV)
+| Action | Description |
+|---|---|
+| **Export trades CSV** | All trades in a spreadsheet-compatible CSV |
+| **Download CSV template** | Blank template showing required column format |
+| **Import from CSV** | Import trades with Merge (add new) or Replace (overwrite trades) mode |
 
 ### Recommended Backup Schedule
-Export JSON once a month and save to iCloud, Google Drive, or email to yourself. The app stores data in your browser's local storage — clearing your browser data or cache can erase it.
+Export a **full backup** once a month and save it to iCloud, Google Drive, or email it to yourself. The app stores data in your browser's local storage — clearing your browser cache will erase it.
+
+### Moving to a New Device
+1. On your old device: **Export full backup** and send the file to yourself
+2. On the new device: install the app, go to **Settings → Import full backup**, choose the file
+
+### Clear All Data
+**Settings → Clear all data** permanently deletes all trades and resets the app. This cannot be undone.
 
 ---
 
 ## Quick Reference
 
-| Action | Where |
+| Task | Where |
 |---|---|
-| Log a new trade | Log tab → fill form → Log & save |
-| Close a position | Dashboard or History → C button |
-| Edit a trade | Dashboard or History → E button |
-| Override fees | History → F button |
+| Log a new trade | Log tab → select strategy → fill fields → Log & save |
+| Close a position | Dashboard or History → Close button |
+| Edit a trade | Dashboard or History → Edit button |
+| Override fees on a trade | History → F button |
+| Batch delete / recalc | History → Select button |
 | Set account balance | Settings → Capital |
 | Change fee plan | Settings → Fee plan |
 | Change monthly target | Settings → Monthly target |
 | Set your name | Settings → tap profile card |
-| Export data | Settings → Export, import & backup |
-| Import AI-converted data | Settings → Export, import & backup → Import JSON |
+| Download CSV template | Settings → Data → Download CSV template |
+| Import AI-converted trades | Settings → Data → Import from CSV |
+| Full backup | Settings → Data → Export full backup |
+| Restore backup | Settings → Data → Import full backup |
+| Clear sample data | Settings → Data → Clear all data |
