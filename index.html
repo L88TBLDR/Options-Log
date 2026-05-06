@@ -320,6 +320,8 @@ input[readonly]{background:var(--surface2);color:var(--ink2)}
 [data-theme="dark"] { --log-input-bg: oklch(0.23 0.014 260); }
 [data-theme="light"] { --log-input-bg: #ffffff; }
 
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+
 </style>
 </head>
 <body>
@@ -528,6 +530,8 @@ function load(){
         if(!state.settings.deposited&&sv.settings.trueCapital)state.settings.deposited=sv.settings.trueCapital;
         // Equity snapshots: month-end portfolio values for accurate ROC
         if(!state.settings.equitySnapshots)state.settings.equitySnapshots={};
+        // Track last time we showed the month-end equity reminder
+        if(!state.settings.lastSnapReminder)state.settings.lastSnapReminder='';
       }
     }else{state.trades=SEED;state.nextId=15;save();}
   }catch(e){state.trades=SEED;state.nextId=15;}
@@ -1916,7 +1920,7 @@ function renderSettingsSub(id,el){
       <div><div class="s-rtitle" style="color:var(--neg)">Clear all data</div></div></div>
       <div class="s-row-r"><span class="s-chev" style="color:var(--neg)">›</span></div>
     </div></div>
-    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-05-06 00:11</div>`;
+    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-05-06 14:19</div>`;
   }
 }
 
@@ -2138,14 +2142,106 @@ function handleImport(event){
 }
 function parseCSVLine(line){const r=[];let cur='';let inQ=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(inQ&&line[i+1]==='"'){cur+='"';i++;}else inQ=!inQ;}else if(c===','&&!inQ){r.push(cur.trim());cur='';}else cur+=c;}r.push(cur.trim());return r;}
 
+// ═══════════════════ MONTH-END EQUITY PROMPT ════════════════════
+function checkMonthEndPrompt(){
+  const now=new Date();
+  const dayOfMonth=now.getDate();
+  // Only show in first 7 days of a new month
+  if(dayOfMonth>7)return;
+  // Previous month key e.g. "2026-04"
+  const prevMoDate=new Date(now.getFullYear(),now.getMonth()-1,1);
+  const prevMo=prevMoDate.toISOString().slice(0,7);
+  const prevMoLabel=prevMoDate.toLocaleString('default',{month:'long',year:'numeric'});
+  const snaps=state.settings.equitySnapshots||{};
+  // Already recorded for last month → no prompt
+  if(snaps[prevMo]!=null&&snaps[prevMo]>0)return;
+  // Already reminded this month → no prompt
+  const thisMonKey=now.toISOString().slice(0,7);
+  if(state.settings.lastSnapReminder===thisMonKey)return;
+  // Need at least one trade to make this relevant
+  if(!state.trades.length)return;
+  // Show the prompt after a brief delay so the app finishes rendering
+  setTimeout(()=>showMonthEndPrompt(prevMo,prevMoLabel),800);
+}
+
+function showMonthEndPrompt(prevMo,prevMoLabel){
+  const currentEq=totalCapitalUSD();
+  const suggestedEq=currentEq>0?currentEq:'';
+  // Compute estimated equity from trades as additional hint
+  const dep=state.settings.deposited||0;
+  const allClo=[...state.trades].filter(t=>t.status==='closed'&&t.closedDate&&t.closedDate<=prevMo+'-31');
+  const cumNet=allClo.reduce((s,t)=>s+(t.pnlNet!=null?t.pnlNet:(t.pnl!=null?+(t.pnl-(t.feesTotal||0)).toFixed(2):0)),0);
+  const estimatedEq=dep+cumNet;
+  const existing=document.getElementById('meq-modal');
+  if(existing)existing.remove();
+  const modal=document.createElement('div');
+  modal.id='meq-modal';
+  modal.style.cssText='position:fixed;inset:0;z-index:9999;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,0.55);backdrop-filter:blur(3px);padding:0 0 env(safe-area-inset-bottom,0) 0;animation:fadeIn .2s ease';
+  modal.innerHTML=`
+    <div style="width:100%;max-width:480px;background:var(--surface);border-radius:20px 20px 0 0;padding:24px 20px calc(24px + env(safe-area-inset-bottom,0));box-shadow:0 -8px 40px rgba(0,0,0,0.4)">
+      <div style="width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 20px"></div>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+        <div style="width:40px;height:40px;border-radius:12px;background:rgba(93,202,165,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5DCAA5" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        </div>
+        <div>
+          <div style="font-size:16px;font-weight:700;color:var(--ink)">Record ${prevMoLabel} equity</div>
+          <div style="font-size:12px;color:var(--ink3);margin-top:1px">Used to calculate your monthly ROC accurately</div>
+        </div>
+      </div>
+      <p style="font-size:13px;color:var(--ink2);line-height:1.6;margin:14px 0 16px">What was your portfolio value at the <b>end of ${prevMoLabel}</b>? Check your broker app for the closing balance.</p>
+      <div style="position:relative;margin-bottom:8px">
+        <span style="position:absolute;left:13px;top:50%;transform:translateY(-50%);font-size:16px;color:var(--ink3);font-weight:600">$</span>
+        <input id="meq-input" type="number" step="100" inputmode="decimal"
+          value="${suggestedEq?Math.round(suggestedEq):''}"
+          placeholder="${estimatedEq>0?Math.round(estimatedEq):'e.g. 38500'}"
+          style="width:100%;padding:13px 14px 13px 26px;font-size:18px;font-weight:700;font-family:'JetBrains Mono',monospace;background:var(--chip);border:1.5px solid var(--border);border-radius:12px;color:var(--ink);box-sizing:border-box;outline:none"
+          onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
+      </div>
+      ${estimatedEq>0?`<div style="font-size:11px;color:var(--ink3);margin-bottom:14px;padding-left:4px">Estimated from trades: $${Math.round(estimatedEq).toLocaleString('en-US')}</div>`:'<div style="margin-bottom:14px"></div>'}
+      <button onclick="saveMonthEndEquity('${prevMo}')" style="width:100%;padding:14px;background:var(--accent);color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;letter-spacing:.01em">Confirm &amp; Save</button>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button onclick="dismissMonthEndPrompt(true)" style="flex:1;padding:11px;background:var(--chip);color:var(--ink3);border:1px solid var(--border);border-radius:10px;font-size:13px;font-weight:600;cursor:pointer">Skip this month</button>
+        <button onclick="dismissMonthEndPrompt(false)" style="flex:1;padding:11px;background:var(--chip);color:var(--ink3);border:1px solid var(--border);border-radius:10px;font-size:13px;font-weight:600;cursor:pointer">Remind me later</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  // Focus input after animation
+  setTimeout(()=>{const inp=document.getElementById('meq-input');if(inp){inp.focus();inp.select();}},300);
+}
+
+function saveMonthEndEquity(prevMo){
+  const inp=document.getElementById('meq-input');
+  const val=parseFloat(inp?inp.value:0);
+  if(!val||val<=0){inp&&(inp.style.borderColor='var(--neg)');return;}
+  if(!state.settings.equitySnapshots)state.settings.equitySnapshots={};
+  state.settings.equitySnapshots[prevMo]=val;
+  // Mark as handled so we don't re-prompt
+  state.settings.lastSnapReminder=new Date().toISOString().slice(0,7);
+  save();
+  const modal=document.getElementById('meq-modal');
+  if(modal)modal.remove();
+  toast('Saved $'+Math.round(val).toLocaleString('en-US')+' for '+prevMo,'success');
+  renderAnalytics();
+}
+
+function dismissMonthEndPrompt(skipMonth){
+  // skipMonth=true: mark reminded so we don't show again this month
+  // skipMonth=false: close but will show again next session
+  if(skipMonth){state.settings.lastSnapReminder=new Date().toISOString().slice(0,7);save();}
+  const modal=document.getElementById('meq-modal');
+  if(modal)modal.remove();
+}
+
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3Nzc5OTc1MDcnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzgwNDgzNTgnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
 
 // ═══════════════════ INIT ═══════════════════
 load();
 setTheme(state.settings.theme||'dark');
 renderLogForm();
 renderDashboard();
+checkMonthEndPrompt();
 
 </script>
 </body>
