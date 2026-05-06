@@ -1920,7 +1920,7 @@ function renderSettingsSub(id,el){
       <div><div class="s-rtitle" style="color:var(--neg)">Clear all data</div></div></div>
       <div class="s-row-r"><span class="s-chev" style="color:var(--neg)">›</span></div>
     </div></div>
-    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-05-06 14:19</div>`;
+    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-05-06 14:22</div>`;
   }
 }
 
@@ -2145,23 +2145,32 @@ function parseCSVLine(line){const r=[];let cur='';let inQ=false;for(let i=0;i<li
 // ═══════════════════ MONTH-END EQUITY PROMPT ════════════════════
 function checkMonthEndPrompt(){
   const now=new Date();
-  const dayOfMonth=now.getDate();
-  // Only show in first 7 days of a new month
-  if(dayOfMonth>7)return;
-  // Previous month key e.g. "2026-04"
-  const prevMoDate=new Date(now.getFullYear(),now.getMonth()-1,1);
-  const prevMo=prevMoDate.toISOString().slice(0,7);
-  const prevMoLabel=prevMoDate.toLocaleString('default',{month:'long',year:'numeric'});
+  const day=now.getDate();
+  const daysInMonth=new Date(now.getFullYear(),now.getMonth()+1,0).getDate();
+  // Determine which month we're recording and whether we're in window
+  // Last 3 days of month → record current month
+  // First 2 days of new month → record previous month
+  let targetMoDate, inWindow=false;
+  if(day>=daysInMonth-2){
+    // Last 3 days: record THIS month
+    targetMoDate=new Date(now.getFullYear(),now.getMonth(),1);
+    inWindow=true;
+  } else if(day<=2){
+    // First 2 days: record PREVIOUS month
+    targetMoDate=new Date(now.getFullYear(),now.getMonth()-1,1);
+    inWindow=true;
+  }
+  if(!inWindow)return;
+  const targetMo=targetMoDate.toISOString().slice(0,7);
+  const targetMoLabel=targetMoDate.toLocaleString('default',{month:'long',year:'numeric'});
   const snaps=state.settings.equitySnapshots||{};
-  // Already recorded for last month → no prompt
-  if(snaps[prevMo]!=null&&snaps[prevMo]>0)return;
-  // Already reminded this month → no prompt
-  const thisMonKey=now.toISOString().slice(0,7);
-  if(state.settings.lastSnapReminder===thisMonKey)return;
+  // Already recorded for this target month → no prompt
+  if(snaps[targetMo]!=null&&snaps[targetMo]>0)return;
+  // Already dismissed for this target month → no prompt
+  if(state.settings.lastSnapReminder===targetMo)return;
   // Need at least one trade to make this relevant
   if(!state.trades.length)return;
-  // Show the prompt after a brief delay so the app finishes rendering
-  setTimeout(()=>showMonthEndPrompt(prevMo,prevMoLabel),800);
+  setTimeout(()=>showMonthEndPrompt(targetMo,targetMoLabel),800);
 }
 
 function showMonthEndPrompt(prevMo,prevMoLabel){
@@ -2201,7 +2210,7 @@ function showMonthEndPrompt(prevMo,prevMoLabel){
       ${estimatedEq>0?`<div style="font-size:11px;color:var(--ink3);margin-bottom:14px;padding-left:4px">Estimated from trades: $${Math.round(estimatedEq).toLocaleString('en-US')}</div>`:'<div style="margin-bottom:14px"></div>'}
       <button onclick="saveMonthEndEquity('${prevMo}')" style="width:100%;padding:14px;background:var(--accent);color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;letter-spacing:.01em">Confirm &amp; Save</button>
       <div style="display:flex;gap:8px;margin-top:10px">
-        <button onclick="dismissMonthEndPrompt(true)" style="flex:1;padding:11px;background:var(--chip);color:var(--ink3);border:1px solid var(--border);border-radius:10px;font-size:13px;font-weight:600;cursor:pointer">Skip this month</button>
+        <button onclick="dismissMonthEndPrompt(true,'${prevMo}')" style="flex:1;padding:11px;background:var(--chip);color:var(--ink3);border:1px solid var(--border);border-radius:10px;font-size:13px;font-weight:600;cursor:pointer">Skip this month</button>
         <button onclick="dismissMonthEndPrompt(false)" style="flex:1;padding:11px;background:var(--chip);color:var(--ink3);border:1px solid var(--border);border-radius:10px;font-size:13px;font-weight:600;cursor:pointer">Remind me later</button>
       </div>
     </div>`;
@@ -2210,31 +2219,31 @@ function showMonthEndPrompt(prevMo,prevMoLabel){
   setTimeout(()=>{const inp=document.getElementById('meq-input');if(inp){inp.focus();inp.select();}},300);
 }
 
-function saveMonthEndEquity(prevMo){
+function saveMonthEndEquity(targetMo){
   const inp=document.getElementById('meq-input');
   const val=parseFloat(inp?inp.value:0);
   if(!val||val<=0){inp&&(inp.style.borderColor='var(--neg)');return;}
   if(!state.settings.equitySnapshots)state.settings.equitySnapshots={};
-  state.settings.equitySnapshots[prevMo]=val;
-  // Mark as handled so we don't re-prompt
-  state.settings.lastSnapReminder=new Date().toISOString().slice(0,7);
+  state.settings.equitySnapshots[targetMo]=val;
+  // Mark this target month as handled so we don't re-prompt
+  state.settings.lastSnapReminder=targetMo;
   save();
   const modal=document.getElementById('meq-modal');
   if(modal)modal.remove();
-  toast('Saved $'+Math.round(val).toLocaleString('en-US')+' for '+prevMo,'success');
+  toast('Saved $'+Math.round(val).toLocaleString('en-US')+' for '+targetMo,'success');
   renderAnalytics();
 }
 
-function dismissMonthEndPrompt(skipMonth){
-  // skipMonth=true: mark reminded so we don't show again this month
-  // skipMonth=false: close but will show again next session
-  if(skipMonth){state.settings.lastSnapReminder=new Date().toISOString().slice(0,7);save();}
+function dismissMonthEndPrompt(skipMonth,targetMo){
+  // skipMonth=true: don't show again for this target month
+  // skipMonth=false: close but will reappear next session
+  if(skipMonth&&targetMo){state.settings.lastSnapReminder=targetMo;save();}
   const modal=document.getElementById('meq-modal');
   if(modal)modal.remove();
 }
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzgwNDgzNTgnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzgwNDg1MzAnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
 
 // ═══════════════════ INIT ═══════════════════
 load();
