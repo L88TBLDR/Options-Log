@@ -1024,13 +1024,10 @@ function renderAnalytics(){
         const allClo=[...closed].filter(t=>t.closedDate).sort((a,b)=>a.closedDate.localeCompare(b.closedDate));
         const rocMonths=[...new Set(allClo.map(t=>t.closedDate.slice(0,7)))].sort().slice(-6);
         if(!rocMonths.length)return'<span style="font-size:11px;color:var(--ink3)">No data</span>';
-        // Helper: previous month key "YYYY-MM"
-        function prevMo(mo){const d=new Date(mo+'-15');d.setMonth(d.getMonth()-1);return d.toISOString().slice(0,7);}
         const rocVals=rocMonths.map(mo=>{
-          const prev=prevMo(mo);
-          // Use recorded end-of-prev-month equity if available, else compute from trades
+          // snaps[mo] = recorded starting equity for this month
           let eqStart,snapped=false;
-          if(snaps[prev]!=null&&snaps[prev]>0){eqStart=snaps[prev];snapped=true;}
+          if(snaps[mo]!=null&&snaps[mo]>0){eqStart=snaps[mo];snapped=true;}
           else{
             const before=allClo.filter(t=>t.closedDate<mo+'-01');
             const cumBefore=before.reduce((s,t)=>s+(t.pnlNet!=null?t.pnlNet:netPnl(t)||0),0);
@@ -1754,21 +1751,25 @@ function renderSettingsSub(id,el){
     const snaps=state.settings.equitySnapshots||{};
     const dep=state.settings.deposited||0;
     const allClo=[...state.trades].filter(t=>t.status==='closed'&&t.closedDate).sort((a,b)=>a.closedDate.localeCompare(b.closedDate));
-    // Generate list of past months to record (12 months back from last month)
+    // Build month list: from earliest trade month through current month (inclusive)
     const now=new Date();
+    const curMo=now.toISOString().slice(0,7);
+    const earliestMo=allClo.length?allClo[0].closedDate.slice(0,7):curMo;
+    // Also include open trades' open dates
+    const openMos=state.trades.filter(t=>t.openDate).map(t=>t.openDate.slice(0,7));
+    const startMo=[earliestMo,...openMos].sort()[0]||curMo;
     const monthsList=[];
-    for(let i=11;i>=0;i--){
-      const d=new Date(now.getFullYear(),now.getMonth()-i-1,1);
-      monthsList.push(d.toISOString().slice(0,7));
-    }
-    // Helper: equity computed from trades for a month-end
-    function computedEqEnd(mo){
-      const before=allClo.filter(t=>t.closedDate<=mo+'-31');
+    let d=new Date(startMo+'-01');
+    const endD=new Date(curMo+'-01');
+    while(d<=endD){monthsList.push(d.toISOString().slice(0,7));d=new Date(d.getFullYear(),d.getMonth()+1,1);}
+    // Helper: equity computed from trades at start of a month
+    function computedEqStart(mo){
+      const before=allClo.filter(t=>t.closedDate<mo+'-01');
       const cum=before.reduce((s,t)=>s+(t.pnlNet!=null?t.pnlNet:(t.pnl!=null?+(t.pnl-(t.feesTotal||0)).toFixed(2):0)),0);
       return dep+cum;
     }
     el.innerHTML=S_BACK+`<div class="sub-title">Monthly equity snapshots</div>
-    <div class="sub-desc">Record your actual portfolio value at the end of each month. This is used as the starting equity for the <b>next month's ROC</b> calculation — giving you an accurate reflection of performance rather than an estimate.</div>
+    <div class="sub-desc">Record your actual portfolio value at the <b>start of each month</b>. This is used as the denominator for that month's ROC — giving you an accurate reflection of performance.</div>
     <div class="s-group"><div style="padding:14px 16px">
       <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Why record?</div>
       <div style="font-size:12px;color:var(--text3);line-height:1.6">The app estimates equity using deposits + cumulative P&L. But your actual account balance may differ due to withdrawals, deposits, or unrealised positions. Recording the real number each month-end makes your ROC chart accurate.</div>
@@ -1776,13 +1777,16 @@ function renderSettingsSub(id,el){
     <div class="s-group">
       ${monthsList.map(mo=>{
         const snap=snaps[mo];
-        const computed=computedEqEnd(mo);
+        const computed=computedEqStart(mo);
         const moLabel=new Date(mo+'-15').toLocaleString('default',{month:'long',year:'numeric'});
         const hasSnap=snap!=null&&snap>0;
         return`<div style="padding:12px 16px;border-bottom:1px solid var(--border)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-            <div style="font-size:13px;font-weight:600;color:var(--ink)">${moLabel}</div>
-            ${hasSnap?`<span style="font-size:10px;font-weight:700;color:var(--accent);background:rgba(93,202,165,0.12);padding:2px 7px;border-radius:10px">● Recorded</span>`:`<span style="font-size:10px;color:var(--ink3)">○ Not recorded</span>`}
+            <div>
+              <div style="font-size:13px;font-weight:600;color:var(--ink)">Start of ${moLabel}</div>
+              <div style="font-size:10px;color:var(--ink3);margin-top:1px">Equity used as ${moLabel} ROC base</div>
+            </div>
+            ${hasSnap?`<span style="font-size:10px;font-weight:700;color:var(--accent);background:rgba(93,202,165,0.12);padding:2px 7px;border-radius:10px">● Recorded</span>`:`<span style="font-size:10px;color:var(--ink3)">○ Not set</span>`}
           </div>
           <div style="display:flex;align-items:center;gap:8px">
             <input type="number" step="100" placeholder="${Math.round(computed)}" value="${hasSnap?snap:''}"
@@ -1796,15 +1800,15 @@ function renderSettingsSub(id,el){
     </div>
     <div style="padding:12px 16px">
       <button class="btn btn-blue" style="width:100%" onclick="
-        const lastMo=(()=>{const d=new Date();d.setDate(0);return d.toISOString().slice(0,7);})();
-        const curMonLabel=(()=>{const d=new Date();return d.toLocaleString('default',{month:'long',year:'numeric'});})();
+        const thisMo=new Date().toISOString().slice(0,7);
+        const curMonLabel=new Date(thisMo+'-15').toLocaleString('default',{month:'long',year:'numeric'});
         const cur=totalCapitalUSD();
         if(!state.settings.equitySnapshots)state.settings.equitySnapshots={};
-        state.settings.equitySnapshots[lastMo]=cur;
+        state.settings.equitySnapshots[thisMo]=cur;
         save();
         renderSettingsSub('equitySnaps',document.getElementById('s-sub-view'));
         toast('Recorded $'+Math.round(cur).toLocaleString('en-US')+' as start of '+curMonLabel);
-      ">Quick-record current equity as start of ${(()=>{const d=new Date();return d.toLocaleString('default',{month:'long',year:'numeric'});})()}  ($${Math.round(totalCapitalUSD()).toLocaleString('en-US')})</button>
+      ">Quick-record current equity as start of ${new Date().toLocaleString('default',{month:'long',year:'numeric'})} ($${Math.round(totalCapitalUSD()).toLocaleString('en-US')})</button>
       <div style="font-size:11px;color:var(--ink3);text-align:center;margin-top:6px">Updates when you change your portfolio value in Settings → Capital</div>
     </div>`;
   }else if(id==='capital'){
@@ -1921,7 +1925,7 @@ function renderSettingsSub(id,el){
       <div><div class="s-rtitle" style="color:var(--neg)">Clear all data</div></div></div>
       <div class="s-row-r"><span class="s-chev" style="color:var(--neg)">›</span></div>
     </div></div>
-    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-05-06 14:34</div>`;
+    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-05-06 17:29</div>`;
   }
 }
 
@@ -2149,8 +2153,8 @@ function checkMonthEndPrompt(){
   const day=now.getDate();
   // Only show in first 7 days of the month
   if(day>7)return;
-  // Record the previous month's equity
-  const targetMoDate=new Date(now.getFullYear(),now.getMonth()-1,1);
+  // Record starting equity for the CURRENT month
+  const targetMoDate=new Date(now.getFullYear(),now.getMonth(),1);
   const targetMo=targetMoDate.toISOString().slice(0,7);
   const targetMoLabel=targetMoDate.toLocaleString('default',{month:'long',year:'numeric'});
   const snaps=state.settings.equitySnapshots||{};
@@ -2184,11 +2188,11 @@ function showMonthEndPrompt(prevMo,prevMoLabel){
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5DCAA5" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         </div>
         <div>
-          <div style="font-size:16px;font-weight:700;color:var(--ink)">Record ${prevMoLabel} equity</div>
-          <div style="font-size:12px;color:var(--ink3);margin-top:1px">Used to calculate your monthly ROC accurately</div>
+          <div style="font-size:16px;font-weight:700;color:var(--ink)">Record start of ${prevMoLabel}</div>
+          <div style="font-size:12px;color:var(--ink3);margin-top:1px">Starting equity for this month's ROC</div>
         </div>
       </div>
-      <p style="font-size:13px;color:var(--ink2);line-height:1.6;margin:14px 0 16px">What was your portfolio value at the <b>end of ${prevMoLabel}</b>? Check your broker app for the closing balance.</p>
+      <p style="font-size:13px;color:var(--ink2);line-height:1.6;margin:14px 0 16px">What is your portfolio value at the <b>start of ${prevMoLabel}</b>? Check your broker app for the current balance.</p>
       <div style="position:relative;margin-bottom:8px">
         <span style="position:absolute;left:13px;top:50%;transform:translateY(-50%);font-size:16px;color:var(--ink3);font-weight:600">$</span>
         <input id="meq-input" type="number" step="100" inputmode="decimal"
@@ -2233,7 +2237,7 @@ function dismissMonthEndPrompt(skipMonth,targetMo){
 }
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzgwNDkyNTcnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzgwNTk3NjInO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
 
 // ═══════════════════ INIT ═══════════════════
 load();
