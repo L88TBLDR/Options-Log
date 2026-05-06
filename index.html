@@ -1752,16 +1752,17 @@ function renderSettingsSub(id,el){
     const dep=state.settings.deposited||0;
     const allClo=[...state.trades].filter(t=>t.status==='closed'&&t.closedDate).sort((a,b)=>a.closedDate.localeCompare(b.closedDate));
     // Build month list: from earliest trade month through current month (inclusive)
+    // Use local year/month to avoid UTC timezone shift bugs
     const now=new Date();
-    const curMo=now.toISOString().slice(0,7);
-    const earliestMo=allClo.length?allClo[0].closedDate.slice(0,7):curMo;
-    // Also include open trades' open dates
-    const openMos=state.trades.filter(t=>t.openDate).map(t=>t.openDate.slice(0,7));
-    const startMo=[earliestMo,...openMos].sort()[0]||curMo;
+    const curMo=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const allTradeMos=state.trades.filter(t=>t.openDate).map(t=>t.openDate.slice(0,7));
+    if(allClo.length)allTradeMos.push(...allClo.map(t=>t.closedDate.slice(0,7)));
+    const startMo=allTradeMos.sort()[0]||curMo;
+    // Pure string-based month incrementor — no Date objects, no timezone issues
+    function incMo(mo){const[y,m]=mo.split('-').map(Number);return m===12?`${y+1}-01`:`${y}-${String(m+1).padStart(2,'0')}`;}
     const monthsList=[];
-    let d=new Date(startMo+'-01');
-    const endD=new Date(curMo+'-01');
-    while(d<=endD){monthsList.push(d.toISOString().slice(0,7));d=new Date(d.getFullYear(),d.getMonth()+1,1);}
+    let mo=startMo;
+    while(mo<=curMo){monthsList.push(mo);mo=incMo(mo);}
     // Helper: equity computed from trades at start of a month
     function computedEqStart(mo){
       const before=allClo.filter(t=>t.closedDate<mo+'-01');
@@ -1800,7 +1801,7 @@ function renderSettingsSub(id,el){
     </div>
     <div style="padding:12px 16px">
       <button class="btn btn-blue" style="width:100%" onclick="
-        const thisMo=new Date().toISOString().slice(0,7);
+        const thisMo=(()=>{const n=new Date();return n.getFullYear()+'-'+(('0'+(n.getMonth()+1)).slice(-2));})();
         const curMonLabel=new Date(thisMo+'-15').toLocaleString('default',{month:'long',year:'numeric'});
         const cur=totalCapitalUSD();
         if(!state.settings.equitySnapshots)state.settings.equitySnapshots={};
@@ -1808,7 +1809,7 @@ function renderSettingsSub(id,el){
         save();
         renderSettingsSub('equitySnaps',document.getElementById('s-sub-view'));
         toast('Recorded $'+Math.round(cur).toLocaleString('en-US')+' as start of '+curMonLabel);
-      ">Quick-record current equity as start of ${new Date().toLocaleString('default',{month:'long',year:'numeric'})} ($${Math.round(totalCapitalUSD()).toLocaleString('en-US')})</button>
+      ">Quick-record current equity as start of ${(()=>{const n=new Date();return n.toLocaleString('default',{month:'long',year:'numeric'});})()}  ($${Math.round(totalCapitalUSD()).toLocaleString('en-US')})</button>
       <div style="font-size:11px;color:var(--ink3);text-align:center;margin-top:6px">Updates when you change your portfolio value in Settings → Capital</div>
     </div>`;
   }else if(id==='capital'){
@@ -1925,7 +1926,7 @@ function renderSettingsSub(id,el){
       <div><div class="s-rtitle" style="color:var(--neg)">Clear all data</div></div></div>
       <div class="s-row-r"><span class="s-chev" style="color:var(--neg)">›</span></div>
     </div></div>
-    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-05-06 17:29</div>`;
+    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-05-06 17:38</div>`;
   }
 }
 
@@ -2153,9 +2154,8 @@ function checkMonthEndPrompt(){
   const day=now.getDate();
   // Only show in first 7 days of the month
   if(day>7)return;
-  // Record starting equity for the CURRENT month
-  const targetMoDate=new Date(now.getFullYear(),now.getMonth(),1);
-  const targetMo=targetMoDate.toISOString().slice(0,7);
+  // Record starting equity for the CURRENT month (local time, no UTC shift)
+  const targetMo=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   const targetMoLabel=targetMoDate.toLocaleString('default',{month:'long',year:'numeric'});
   const snaps=state.settings.equitySnapshots||{};
   // Already recorded → no prompt
@@ -2237,7 +2237,7 @@ function dismissMonthEndPrompt(skipMonth,targetMo){
 }
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzgwNTk3NjInO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzgwNjAyOTgnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
 
 // ═══════════════════ INIT ═══════════════════
 load();
