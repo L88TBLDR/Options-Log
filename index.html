@@ -791,24 +791,32 @@ function renderDashboard(){
         if(ld&&ld.ok){
           const otm=liveOtmLabel(ld.stockPrice,t.strike,t.type);
           const stockStr=ld.stockPrice!=null?'$'+ld.stockPrice.toFixed(2):'—';
-          const captured=ld.mid!=null?((t.premium-ld.mid)/t.premium*100):null;
-          const capturedStr=captured!=null?captured.toFixed(1)+'%':'—';
-          const capturedCol=captured!=null?(captured>=50?'var(--pos)':'var(--accent)'):'var(--ink3)';
-          const optStr=ld.bid!=null?`$${ld.bid.toFixed(2)}/$${ld.ask.toFixed(2)}`:(ld.mid!=null?'$'+ld.mid.toFixed(2):'—');
-          const ivStr=ld.iv!=null?ld.iv.toFixed(1)+'%':'';
-          const deltaStr=ld.delta!=null?ld.delta.toFixed(2):'';
-          const ageMin=Math.round((Date.now()-ld.ts)/60000);
-          liveStrip=`<div style="grid-column:1/-1;background:rgba(93,202,165,0.07);border-radius:8px;padding:5px 8px;margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">
-            <span style="font-size:10px;font-weight:700;color:var(--ink2)">Stock ${stockStr}</span>
-            ${otm?`<span style="font-size:10px;font-weight:700;color:${otm.color}">${otm.text}</span>`:''}
-            <span style="font-size:10px;color:var(--ink3)">·</span>
-            <span style="font-size:10px;color:var(--ink2)">Opt ${optStr}</span>
-            <span style="font-size:10px;color:var(--ink3)">·</span>
-            <span style="font-size:10px;font-weight:700;color:${capturedCol}">Captured ${capturedStr}</span>
-            ${ivStr?`<span style="font-size:10px;color:var(--ink3)">· IV ${ivStr}</span>`:''}
-            ${deltaStr?`<span style="font-size:10px;color:var(--ink3)">Δ ${deltaStr}</span>`:''}
-            <span style="font-size:9px;color:var(--ink3);margin-left:auto">${ageMin}m ago</span>
-          </div>`;
+          let optSection='';
+          if(!ld.prevClose){
+            // Paid-tier data: show option bid/ask, capture %, greeks
+            const captured=ld.mid!=null?((t.premium-ld.mid)/t.premium*100):null;
+            const capturedStr=captured!=null?captured.toFixed(1)+'%':'—';
+            const capturedCol=captured!=null?(captured>=50?'var(--pos)':'var(--accent)'):'var(--ink3)';
+            const optStr=ld.bid!=null?'$'+ld.bid.toFixed(2)+'/$'+ld.ask.toFixed(2):(ld.mid!=null?'$'+ld.mid.toFixed(2):'—');
+            const ivStr=ld.iv!=null?ld.iv.toFixed(1)+'%':'';
+            const deltaStr=ld.delta!=null?ld.delta.toFixed(2):'';
+            const ageMin=Math.round((Date.now()-ld.ts)/60000);
+            optSection='<span style="font-size:10px;color:var(--ink3)">·</span>'
+              +'<span style="font-size:10px;color:var(--ink2)">Opt '+optStr+'</span>'
+              +'<span style="font-size:10px;color:var(--ink3)">·</span>'
+              +'<span style="font-size:10px;font-weight:700;color:'+capturedCol+'">Captured '+capturedStr+'</span>'
+              +(ivStr?'<span style="font-size:10px;color:var(--ink3)">· IV '+ivStr+'</span>':'')
+              +(deltaStr?'<span style="font-size:10px;color:var(--ink3)">Δ '+deltaStr+'</span>':'')
+              +'<span style="font-size:9px;color:var(--ink3);margin-left:auto">'+ageMin+'m ago</span>';
+          }else{
+            // Free-tier: show prev-close label
+            optSection='<span style="font-size:9px;color:var(--ink3)">(prev close)</span>';
+          }
+          liveStrip='<div style="grid-column:1/-1;background:rgba(93,202,165,0.07);border-radius:8px;padding:5px 8px;margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">'
+            +'<span style="font-size:10px;font-weight:700;color:var(--ink2)">Stock '+stockStr+'</span>'
+            +(otm?'<span style="font-size:10px;font-weight:700;color:'+otm.color+'">'+otm.text+'</span>':'')
+            +optSection
+            +'</div>';
         }
         return`<div class="swipe-wrap" id="sw-${t.id}">
           <button class="swipe-delete-btn" onclick="delTrade(${t.id})">Delete</button>
@@ -1787,14 +1795,14 @@ function renderSettingsSub(id,el){
   }else if(id==='marketdata'){
     const key=state.settings.polygonApiKey||'';
     el.innerHTML=S_BACK+`<div class="sub-title">Market data</div>
-    <div class="sub-desc">Connect Polygon.io to see live stock prices, option bid/ask, implied volatility, and Greeks on your open positions. Tap <b>↻ Live</b> on the dashboard to refresh.</div>
+    <div class="sub-desc">Connect Polygon.io to pull the previous session's closing stock price for your open positions. Tap <b>↻ Live</b> on the dashboard to refresh.</div>
     <div class="s-group"><div style="padding:20px 16px 16px">
       <div class="field" style="margin-bottom:0">
         <label>Polygon.io API key</label>
         <input type="text" id="poly-key-input" value="${esc(key)}" placeholder="Paste your API key here"
           style="font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.03em"
           oninput="state.settings.polygonApiKey=this.value.trim();save();renderSettingsMain();">
-        <div style="font-size:11px;color:var(--text3);margin-top:6px">Stored on your device only — never sent to any server other than Polygon.io. Free plan at <b>polygon.io</b> gives delayed data.</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:6px">Free API key at <b>polygon.io</b> — stored on your device only, never shared.</div>
       </div>
     </div></div>
     ${key?`<div class="s-group"><div style="padding:14px 16px">
@@ -1804,16 +1812,15 @@ function renderSettingsSub(id,el){
       </div>
     </div></div>
     <div style="padding:12px 16px">
-      <button class="btn btn-blue" style="width:100%" onclick="switchTab('dashboard');fetchLivePrices()">Fetch live prices now</button>
+      <button class="btn btn-blue" style="width:100%" onclick="switchTab('dashboard');fetchLivePrices()">Fetch prices now</button>
     </div>`:''}
     <div class="s-group"><div style="padding:14px 16px">
-      <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">What you'll see per position</div>
+      <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Free plan shows</div>
       <div style="font-size:12px;color:var(--text3);line-height:1.8">
-        📈 Current stock price &amp; OTM/ITM distance<br>
-        💰 Option bid / ask &amp; % of premium captured<br>
-        🔢 Live implied volatility &amp; delta<br>
-        ⏱ Timestamp of last refresh
+        📈 Previous session close price per stock<br>
+        🎯 OTM / ITM distance vs your strike
       </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">Live option bid/ask, IV, and Greeks require a <b>Polygon Starter</b> plan (~$29/mo).</div>
     </div></div>`;
   }else if(id==='equitySnaps'){
     const snaps=state.settings.equitySnapshots||{};
@@ -1994,7 +2001,7 @@ function renderSettingsSub(id,el){
       <div><div class="s-rtitle" style="color:var(--neg)">Clear all data</div></div></div>
       <div class="s-row-r"><span class="s-chev" style="color:var(--neg)">›</span></div>
     </div></div>
-    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-05-09 16:31</div>`;
+    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-05-09 16:38</div>`;
   }
 }
 
@@ -2246,45 +2253,36 @@ async function fetchLivePrices(){
   const btn=document.getElementById('live-refresh-btn');
   if(btn){btn.textContent='⟳ …';btn.disabled=true;}
 
+  // Free tier: use previous-day aggregate (one call per unique ticker)
   const BASE='https://api.polygon.io';
-  await Promise.all(open.map(async t=>{
-    const optTicker=polygonOptionTicker(t.ticker,t.expiry,t.type,t.strike);
-    // Try option snapshot first (includes underlying price + greeks)
-    if(optTicker){
-      try{
-        const r=await fetch(`${BASE}/v3/snapshot/options/${t.ticker}/${optTicker}?apiKey=${apiKey}`);
-        const d=await r.json();
-        if(d.results){
-          const res=d.results;
-          const bid=res.last_quote?.bid;const ask=res.last_quote?.ask;
-          const mid=(bid!=null&&ask!=null)?(bid+ask)/2:(res.last_trade?.price);
-          _liveData[t.id]={
-            ok:true,
-            stockPrice:res.underlying_asset?.price,
-            bid,ask,mid,
-            iv:res.implied_volatility!=null?(res.implied_volatility*100):null,
-            delta:res.greeks?.delta,
-            theta:res.greeks?.theta,
-            oi:res.open_interest,
-            ts:Date.now()
-          };
-          return;
-        }
-      }catch(e){}
-    }
-    // Fallback: stock price only
+  const tickers=[...new Set(open.map(t=>t.ticker).filter(Boolean))];
+  const priceMap={};
+
+  await Promise.all(tickers.map(async ticker=>{
     try{
-      const r=await fetch(`${BASE}/v2/snapshot/locale/us/markets/stocks/tickers/${t.ticker}?apiKey=${apiKey}`);
+      const r=await fetch(`${BASE}/v2/aggs/ticker/${ticker}/prev?adjusted=true&apiKey=${apiKey}`);
       const d=await r.json();
-      const price=d.ticker?.lastTrade?.p||d.ticker?.min?.c||d.ticker?.day?.c;
-      if(price)_liveData[t.id]={ok:true,stockPrice:price,ts:Date.now()};
+      if(d.status==='OK'&&d.results&&d.results.length){
+        priceMap[ticker]=d.results[0].c; // previous session close
+      }
     }catch(e){}
   }));
+
+  open.forEach(t=>{
+    const price=priceMap[t.ticker];
+    if(price!=null){
+      _liveData[t.id]={ok:true,stockPrice:price,prevClose:true,ts:Date.now()};
+    }
+  });
 
   if(btn){btn.textContent='↻ Live';btn.disabled=false;}
   renderDashboard();
   const n=Object.values(_liveData).filter(x=>x.ok).length;
-  toast('Live: '+n+'/'+open.length+' updated');
+  if(n>0){
+    toast(n+'/'+open.length+' updated (prev session close)');
+  }else{
+    toast('No data returned — check your API key');
+  }
 }
 
 // ═══════════════════ MONTH-END EQUITY PROMPT ════════════════════
@@ -2376,7 +2374,7 @@ function dismissMonthEndPrompt(skipMonth,targetMo){
 }
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzgzMTU0NjYnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzgzMTU5MDcnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
 
 // ═══════════════════ INIT ═══════════════════
 load();
