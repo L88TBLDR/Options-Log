@@ -379,11 +379,11 @@ input[readonly]{background:var(--surface2);color:var(--ink2)}
     <input type="hidden" id="cm-id">
     <div class="form-2" style="margin-bottom:11px">
       <div class="field" style="margin-bottom:0"><label>Close date</label><input id="cm-date" type="date"></div>
-      <div class="field" style="margin-bottom:0"><label>Outcome</label>
+      <div class="field" id="cm-outcome-row" style="margin-bottom:0"><label>Outcome</label>
         <select id="cm-outcome"><option>Expired</option><option>Closed</option><option>Assigned</option><option>Sold</option></select>
       </div>
     </div>
-    <div class="field"><label>Close cost per contract (0 if expired)</label><input id="cm-cost" type="number" value="0" step="0.01"></div>
+    <div class="field"><label id="cm-cost-label">Close cost per contract (0 if expired)</label><input id="cm-cost" type="number" value="0" step="0.01"></div>
     <div class="btn-row">
       <button class="btn btn-blue" onclick="confirmClose()">Confirm</button>
       <button class="btn btn-ghost" onclick="hideModal('close-modal')">Cancel</button>
@@ -391,6 +391,23 @@ input[readonly]{background:var(--surface2);color:var(--ink2)}
   </div>
 </div>
 
+<!-- ASSIGN STOCK MODAL -->
+<div class="modal-bg" id="assign-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Log assigned shares</div>
+    <div id="assign-info" style="padding:4px 0 16px;font-size:14px;color:var(--ink2);line-height:1.7"></div>
+    <input type="hidden" id="as-ticker">
+    <input type="hidden" id="as-shares">
+    <input type="hidden" id="as-basis">
+    <input type="hidden" id="as-date">
+    <input type="hidden" id="as-from-id">
+    <div class="btn-row">
+      <button class="btn btn-blue" onclick="confirmLogStock()">Log position</button>
+      <button class="btn btn-ghost" onclick="hideModal('assign-modal')">Skip</button>
+    </div>
+  </div>
+</div>
 <nav class="nav">
   <button class="nav-btn active" onclick="switchTab('dashboard')" id="nav-dashboard">
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><rect x="2" y="2" width="6" height="7" rx="1.5"/><rect x="10" y="2" width="6" height="4" rx="1.5"/><rect x="2" y="11" width="6" height="5" rx="1.5"/><rect x="10" y="8" width="6" height="8" rx="1.5"/></svg>Dashboard
@@ -418,7 +435,7 @@ input[readonly]{background:var(--surface2);color:var(--ink2)}
     <div class="form-2" style="margin-bottom:11px">
       <div class="field" style="margin-bottom:0"><label>Ticker</label><input id="em-ticker" type="text" placeholder="CRWV" oninput="this.value=this.value.toUpperCase()"></div>
       <div class="field" style="margin-bottom:0"><label>Strategy</label>
-        <select id="em-type"><option>CSP</option><option>CC</option><option>PMCC</option><option>Diagonal</option><option>Bull Put</option><option>Bear Call</option><option>Stock Sale</option></select>
+        <select id="em-type"><option>CSP</option><option>CC</option><option>PMCC</option><option>Diagonal</option><option>Bull Put</option><option>Bear Call</option><option>Stock Sale</option><option>Stock</option></select>
       </div>
     </div>
     <div class="form-2" style="margin-bottom:11px">
@@ -543,10 +560,10 @@ function load(){
 function setTheme(t){state.settings.theme=t;document.documentElement.setAttribute('data-theme',t);const m=document.getElementById('theme-meta');if(m)m.setAttribute('content',t==='dark'?'#0f0f1a':'#f4f5f7');save();}
 let _tt;function toast(msg,type=''){const el=document.getElementById('toast');el.textContent=msg;el.className='toast show'+(type?' toast-'+type:'');clearTimeout(_tt);_tt=setTimeout(()=>el.classList.remove('show'),2400);}
 function calcDTE(expiry,from){if(!expiry)return 0;return Math.max(0,Math.round((new Date(expiry)-(from?new Date(from):new Date()))/86400000));}
-function capEff(t){if(t.type==='Stock Sale'||t.pnl==null)return null;const cap=t.strike*t.contracts*100;return cap>0?(t.pnl/cap)*100:null;}
+function capEff(t){if(t.type==='Stock Sale'||t.type==='Stock'||t.pnl==null)return null;const cap=t.strike*t.contracts*100;return cap>0?(t.pnl/cap)*100:null;}
 function aroc(t){const ce=capEff(t);return(ce!==null&&t.dte>0)?(ce/t.dte)*365:null;}
 function netPnl(t){if(t.pnl==null)return null;return+(t.pnl-(t.feesTotal||0)).toFixed(2);}
-function badgeClass(type){return{CSP:'b-csp',CC:'b-cc',Diagonal:'b-diag','Stock Sale':'b-stock'}[type]||'b-other';}
+function badgeClass(type){return{CSP:'b-csp',CC:'b-cc',Diagonal:'b-diag','Stock Sale':'b-stock',Stock:'b-stock'}[type]||'b-other';}
 function outcomeClass(o){return{Expired:'b-expired',Assigned:'b-assigned',Sold:'b-sold',Closed:'b-closed'}[o]||'b-closed';}
 function fmt(n,d=2){return n==null?'-':'$'+Math.abs(+n).toFixed(d);}
 function fmtSgn(n,d=2){if(n==null)return'-';return(n>=0?'+':'-')+'$'+Math.abs(+n).toFixed(d);}
@@ -563,7 +580,7 @@ const PRESETS={
 
 function calcFees(trade,outcome){
   const f=state.settings.fees||{};
-  if(trade.type==='Stock Sale'){const fee=+(f.stockRate||0).toFixed(4);return{feesOpen:fee,feesClose:0,feesTotal:fee};}
+  if(trade.type==='Stock Sale'||trade.type==='Stock'){const fee=+(f.stockRate||0).toFixed(4);return{feesOpen:fee,feesClose:0,feesTotal:fee};}
   const pKey=f.preset||'custom';const p=PRESETS[pKey]||f;
   const contracts=trade.contracts||1;
   const commRate=pKey!=='custom'?p.commissionRate:(f.commissionRate||0);
@@ -666,7 +683,7 @@ function dc(id){if(_charts[id]){_charts[id].destroy();delete _charts[id];}}
 function renderDashboard(){
   const open=state.trades.filter(t=>t.status==='open');
   const closed=state.trades.filter(t=>t.status==='closed');
-  const opts=closed.filter(t=>t.type!=='Stock Sale');
+  const opts=closed.filter(t=>t.type!=='Stock Sale'&&t.type!=='Stock');
   const grossPnl=closed.reduce((s,t)=>s+(t.pnl||0),0);
   const totalFees=closed.reduce((s,t)=>s+(t.feesTotal||0),0);
   const wins=opts.filter(t=>(t.pnl||0)>0).length;
@@ -783,6 +800,31 @@ function renderDashboard(){
         <div></div>
       </div>`+
     open.map(t=>{
+        // ── Stock holding row (assigned shares) ──
+        if(t.type==='Stock'){
+          const shares=t.contracts;const basis=t.strike;
+          const ld=_liveData[t.id];const sPrice=ld&&ld.stockPrice?ld.stockPrice:null;
+          const unreal=sPrice!=null?(sPrice-basis)*shares:null;
+          const unrealStr=unreal!=null?((unreal>=0?'+$':'-$')+Math.abs(unreal).toFixed(2)):null;
+          const unrealCol=unreal!=null?(unreal>=0?'var(--pos)':'var(--neg)'):'';
+          const priceInfo=sPrice?'$'+sPrice.toFixed(2)+' now':'cost $'+basis.toFixed(2);
+          return'<div class="swipe-wrap" id="sw-'+t.id+'">'
+            +'<button class="swipe-delete-btn" onclick="delTrade('+t.id+')">Delete</button>'
+            +'<div class="swipe-content" id="swc-'+t.id+'" ontouchstart="swipeStart(event,'+t.id+')" ontouchmove="swipeMove(event,'+t.id+')" ontouchend="swipeEnd(event,'+t.id+')"'
+            +' style="display:grid;grid-template-columns:1fr auto auto auto;align-items:center;padding:9px 2px;gap:0">'
+            +'<div><div style="font-size:14px;font-weight:700">'+esc(t.ticker)+'</div>'
+            +'<div><span class="badge b-stock" style="margin-right:0">STOCK</span></div></div>'
+            +'<div style="text-align:right;padding-right:10px">'
+            +'<div style="font-size:13px;font-weight:600">'+shares+' sh</div>'
+            +'<div style="font-size:11px;color:var(--ink3)">@ $'+basis.toFixed(2)+'</div></div>'
+            +'<div style="text-align:right;padding-right:8px">'
+            +(unrealStr?'<div class="mono" style="font-size:13px;font-weight:700;color:'+unrealCol+'">'+unrealStr+'</div>':'')
+            +'<div style="font-size:11px;color:var(--ink3)">'+priceInfo+'</div></div>'
+            +'<div style="display:flex;gap:4px">'
+            +'<button class="btn-sm" style="padding:5px 8px;font-size:11px;background:rgba(93,202,165,0.12);color:var(--teal);border-color:var(--teal)" onclick="logCCFromStock('+t.id+')">CC</button>'
+            +'<button class="btn-sm" style="padding:5px 8px;font-size:11px" onclick="showClose('+t.id+')">Sell</button>'
+            +'</div></div></div>';
+        }
         const dl=t.expiry?calcDTE(t.expiry):'-';const warn=typeof dl==='number'&&dl<=7;
         const expiryFmt=t.expiry?t.expiry.slice(5).replace('-','/'):'—';
         // Live data strip
@@ -949,7 +991,7 @@ function _effStatTile(label,val,sub,color){
 function renderAnalytics(){
   const closed=state.trades.filter(t=>t.status==='closed');
   const open=state.trades.filter(t=>t.status==='open');
-  const opts=closed.filter(t=>t.type!=='Stock Sale');
+  const opts=closed.filter(t=>t.type!=='Stock Sale'&&t.type!=='Stock');
   const grossPnl=opts.reduce((s,t)=>s+(t.pnl||0),0);
   const totalCred=opts.reduce((s,t)=>s+t.totalCredit,0);
   const premEff=totalCred>0?((grossPnl/totalCred)*100).toFixed(1):'0.0';
@@ -1337,15 +1379,80 @@ function swipeEnd(e,id){
   if(dx<-40){content.style.transform='translateX(-72px)';delBtn.style.transform='translateX(0)';_swipe[id].open=true;}
   else{content.style.transform='translateX(0)';delBtn.style.transform='translateX(100%)';_swipe[id].open=false;}
 }
-function showClose(id){document.getElementById('cm-id').value=id;document.getElementById('cm-date').value=new Date().toISOString().slice(0,10);document.getElementById('cm-cost').value=0;document.getElementById('close-modal').classList.add('show');}
+function showClose(id){
+  const t=state.trades.find(x=>x.id===id);
+  document.getElementById('cm-id').value=id;
+  document.getElementById('cm-date').value=new Date().toISOString().slice(0,10);
+  const lbl=document.getElementById('cm-cost-label');
+  const outRow=document.getElementById('cm-outcome-row');
+  const titleEl=document.querySelector('#close-modal .modal-title');
+  if(t&&t.type==='Stock'){
+    if(titleEl)titleEl.textContent='Sell shares';
+    if(lbl)lbl.textContent='Sale price per share';
+    if(outRow)outRow.style.display='none';
+    document.getElementById('cm-outcome').value='Sold';
+    const ld=_liveData[t.id];
+    document.getElementById('cm-cost').value=ld&&ld.stockPrice?ld.stockPrice.toFixed(2):t.strike.toFixed(2);
+  }else{
+    if(titleEl)titleEl.textContent='Close position';
+    if(lbl)lbl.textContent='Close cost per contract (0 if expired)';
+    if(outRow)outRow.style.display='';
+    document.getElementById('cm-cost').value=0;
+  }
+  document.getElementById('close-modal').classList.add('show');
+}
 function hideModal(id){document.getElementById(id||'close-modal').classList.remove('show');}
 function confirmClose(){
   const id=parseInt(document.getElementById('cm-id').value);const t=state.trades.find(x=>x.id===id);if(!t)return;
   const cc=parseFloat(document.getElementById('cm-cost').value)||0;
   t.status='closed';t.closedDate=document.getElementById('cm-date').value;t.outcome=document.getElementById('cm-outcome').value;t.closeCost=cc;
-  t.pnl=+(t.totalCredit-(cc*t.contracts*100)).toFixed(2);
-  const fc=calcFees(t,t.outcome);t.feesOpen=t.feesOpen||fc.feesOpen;t.feesClose=fc.feesClose;t.feesTotal=(t.feesOpen||0)+fc.feesClose;t.pnlNet=+(t.pnl-t.feesTotal).toFixed(2);
-  save();hideModal('close-modal');toast(t.ticker+' closed · '+(t.pnl>=0?'+':'')+fmt(t.pnl));renderDashboard();
+  if(t.type==='Stock'){
+    // P&L = (sale price − cost basis) × shares
+    t.pnl=+((cc-t.strike)*t.contracts).toFixed(2);
+    const fc=calcFees(t,t.outcome);t.feesOpen=t.feesOpen||0;t.feesClose=fc.feesClose||0;t.feesTotal=(t.feesOpen||0)+t.feesClose;t.pnlNet=+(t.pnl-t.feesTotal).toFixed(2);
+  }else{
+    t.pnl=+(t.totalCredit-(cc*t.contracts*100)).toFixed(2);
+    const fc=calcFees(t,t.outcome);t.feesOpen=t.feesOpen||fc.feesOpen;t.feesClose=fc.feesClose;t.feesTotal=(t.feesOpen||0)+fc.feesClose;t.pnlNet=+(t.pnl-t.feesTotal).toFixed(2);
+  }
+  save();hideModal('close-modal');toast(t.ticker+' closed · '+(t.pnl>=0?'+':'')+fmt(t.pnl));
+  if(t.outcome==='Assigned'){setTimeout(()=>promptLogStock(t),400);}
+  renderDashboard();
+}
+function promptLogStock(t){
+  const shares=t.contracts*100;const basis=t.strike;
+  document.getElementById('as-ticker').value=t.ticker;
+  document.getElementById('as-shares').value=shares;
+  document.getElementById('as-basis').value=basis;
+  document.getElementById('as-date').value=t.closedDate||new Date().toISOString().slice(0,10);
+  document.getElementById('as-from-id').value=t.id;
+  document.getElementById('assign-info').innerHTML='You were assigned <b>'+shares+' '+esc(t.ticker)+'</b> shares at <b>$'+basis.toFixed(2)+'</b>.<br>Log as an open position to track covered calls and your eventual sale P&amp;L.';
+  document.getElementById('assign-modal').classList.add('show');
+}
+function confirmLogStock(){
+  const ticker=document.getElementById('as-ticker').value;
+  const shares=parseInt(document.getElementById('as-shares').value);
+  const basis=parseFloat(document.getElementById('as-basis').value);
+  const date=document.getElementById('as-date').value;
+  const fromId=parseInt(document.getElementById('as-from-id').value);
+  const trade={id:state.nextId++,ticker,type:'Stock',openDate:date,expiry:null,
+    strike:basis,premium:0,contracts:shares,underlying:basis,
+    iv:0,delta:0,dte:0,notes:'Assigned from #'+fromId,
+    totalCredit:0,status:'open',closedDate:null,closeCost:0,outcome:null,pnl:null,
+    feesOpen:0,feesClose:0,feesTotal:0,pnlNet:null,assignedFromId:fromId};
+  state.trades.unshift(trade);save();hideModal('assign-modal');
+  toast(ticker+' stock position logged');renderDashboard();
+}
+function logCCFromStock(stockId){
+  const t=state.trades.find(x=>x.id===stockId);if(!t)return;
+  switchTab('log');
+  setTimeout(()=>{
+    const te=document.getElementById('lf-ticker');if(te)te.value=t.ticker;
+    setLogType('CC');
+    setTimeout(()=>{
+      const ce=document.getElementById('lf-contracts');if(ce)ce.value=Math.max(1,Math.floor(t.contracts/100));
+      updateLogCalc();
+    },60);
+  },60);
 }
 function delTrade(id){if(!confirm('Delete this trade?'))return;state.trades=state.trades.filter(x=>x.id!==id);save();toast('Deleted','warn');renderDashboard();}
 function showEdit(id){
@@ -2001,7 +2108,7 @@ function renderSettingsSub(id,el){
       <div><div class="s-rtitle" style="color:var(--neg)">Clear all data</div></div></div>
       <div class="s-row-r"><span class="s-chev" style="color:var(--neg)">›</span></div>
     </div></div>
-    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-05-09 16:47</div>`;
+    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-05-09 17:14</div>`;
   }
 }
 
@@ -2375,7 +2482,7 @@ function dismissMonthEndPrompt(skipMonth,targetMo){
 }
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzgzMTY0MjcnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzgzMTgwNzMnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
 
 // ═══════════════════ INIT ═══════════════════
 load();
