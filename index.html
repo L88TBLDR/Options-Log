@@ -333,7 +333,7 @@ input[readonly]{background:var(--surface2);color:var(--ink2)}
   <div class="grid-2" id="sum-cards"></div>
   <div class="card" id="capital-card"><div class="card-title">Capital utilisation</div><div id="capital-body"></div></div>
   <div class="card" id="promo-card" style="display:none;border-color:rgba(93,202,165,0.2)"><div class="card-title" style="display:flex;justify-content:space-between;align-items:center"><span>Promotions &amp; capital</span><span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:rgba(93,202,165,0.12);color:var(--teal)">New account</span></div><div id="promo-body"></div></div>
-  <div class="card"><div class="card-title" style="display:flex;justify-content:space-between;align-items:center"><span>Open positions</span><span id="dash-open-count" class="mono" style="font-size:13px;font-weight:700;color:var(--ink2)"></span></div><div id="dash-open"></div></div>
+  <div class="card"><div class="card-title" style="display:flex;justify-content:space-between;align-items:center"><span>Open positions</span><div style="display:flex;align-items:center;gap:8px"><button id="live-refresh-btn" onclick="fetchLivePrices()" style="font-size:11px;font-weight:600;color:var(--accent);background:none;border:1px solid var(--accent);border-radius:8px;padding:3px 8px;cursor:pointer;display:none">↻ Live</button><span id="dash-open-count" class="mono" style="font-size:13px;font-weight:700;color:var(--ink2)"></span></div></div><div id="dash-open"></div></div>
   <div class="card">
     <div class="card-title">Cumulative P&amp;L</div>
     <div class="chart-wrap"><canvas id="c-pnl"></canvas></div>
@@ -530,6 +530,8 @@ function load(){
         if(!state.settings.deposited&&sv.settings.trueCapital)state.settings.deposited=sv.settings.trueCapital;
         // Equity snapshots: month-end portfolio values for accurate ROC
         if(!state.settings.equitySnapshots)state.settings.equitySnapshots={};
+        // Polygon.io API key for live market data
+        if(!state.settings.polygonApiKey)state.settings.polygonApiKey='';
         // Track last time we showed the month-end equity reminder
         if(!state.settings.lastSnapReminder)state.settings.lastSnapReminder='';
       }
@@ -767,6 +769,10 @@ function renderDashboard(){
   const _oc=document.getElementById('dash-open-count');
   if(_oc)_oc.innerHTML=open.length?`<span style="color:var(--pos);font-size:15px">${open.length}</span><span style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.06em;margin-left:4px">OPEN</span>`:'';
 
+  // Show Live button only if API key is configured
+  const _lb=document.getElementById('live-refresh-btn');
+  if(_lb)_lb.style.display=state.settings.polygonApiKey?'':'none';
+
   // Open positions with swipe-to-delete — redesigned rows
   document.getElementById('dash-open').innerHTML=open.length
     ?`<div style="display:grid;grid-template-columns:1fr auto auto auto auto;gap:0;padding:0 2px 6px;border-bottom:1px solid var(--border);margin-bottom:4px">
@@ -779,6 +785,31 @@ function renderDashboard(){
     open.map(t=>{
         const dl=t.expiry?calcDTE(t.expiry):'-';const warn=typeof dl==='number'&&dl<=7;
         const expiryFmt=t.expiry?t.expiry.slice(5).replace('-','/'):'—';
+        // Live data strip
+        const ld=_liveData[t.id];
+        let liveStrip='';
+        if(ld&&ld.ok){
+          const otm=liveOtmLabel(ld.stockPrice,t.strike,t.type);
+          const stockStr=ld.stockPrice!=null?'$'+ld.stockPrice.toFixed(2):'—';
+          const captured=ld.mid!=null?((t.premium-ld.mid)/t.premium*100):null;
+          const capturedStr=captured!=null?captured.toFixed(1)+'%':'—';
+          const capturedCol=captured!=null?(captured>=50?'var(--pos)':'var(--accent)'):'var(--ink3)';
+          const optStr=ld.bid!=null?`$${ld.bid.toFixed(2)}/$${ld.ask.toFixed(2)}`:(ld.mid!=null?'$'+ld.mid.toFixed(2):'—');
+          const ivStr=ld.iv!=null?ld.iv.toFixed(1)+'%':'';
+          const deltaStr=ld.delta!=null?ld.delta.toFixed(2):'';
+          const ageMin=Math.round((Date.now()-ld.ts)/60000);
+          liveStrip=`<div style="grid-column:1/-1;background:rgba(93,202,165,0.07);border-radius:8px;padding:5px 8px;margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+            <span style="font-size:10px;font-weight:700;color:var(--ink2)">Stock ${stockStr}</span>
+            ${otm?`<span style="font-size:10px;font-weight:700;color:${otm.color}">${otm.text}</span>`:''}
+            <span style="font-size:10px;color:var(--ink3)">·</span>
+            <span style="font-size:10px;color:var(--ink2)">Opt ${optStr}</span>
+            <span style="font-size:10px;color:var(--ink3)">·</span>
+            <span style="font-size:10px;font-weight:700;color:${capturedCol}">Captured ${capturedStr}</span>
+            ${ivStr?`<span style="font-size:10px;color:var(--ink3)">· IV ${ivStr}</span>`:''}
+            ${deltaStr?`<span style="font-size:10px;color:var(--ink3)">Δ ${deltaStr}</span>`:''}
+            <span style="font-size:9px;color:var(--ink3);margin-left:auto">${ageMin}m ago</span>
+          </div>`;
+        }
         return`<div class="swipe-wrap" id="sw-${t.id}">
           <button class="swipe-delete-btn" onclick="delTrade(${t.id})">Delete</button>
           <div class="swipe-content" id="swc-${t.id}" ontouchstart="swipeStart(event,${t.id})" ontouchmove="swipeMove(event,${t.id})" ontouchend="swipeEnd(event,${t.id})"
@@ -800,6 +831,7 @@ function renderDashboard(){
               <button class="btn-sm" style="padding:5px 8px;font-size:11px" onclick="showEdit(${t.id})">E</button>
               <button class="btn-sm" style="padding:5px 8px;font-size:11px" onclick="showClose(${t.id})">C</button>
             </div>
+            ${liveStrip}
           </div>
         </div>`;
       }).join('')
@@ -1628,6 +1660,11 @@ function renderSettingsMain(){
       <div><div class="s-rtitle">Monthly equity snapshots</div><div class="s-rsub">${(()=>{const n=Object.keys(state.settings.equitySnapshots||{}).length;return n?n+' month'+(n>1?'s':'')+' recorded':'Record month-end equity for accurate ROC';})()}</div></div></div>
       <div class="s-row-r"><span class="s-chev">›</span></div>
     </div>
+    <div class="s-row" onclick="openSettingsSub('marketdata')">
+      <div class="s-row-l"><div class="s-icon" style="background:rgba(218,162,30,0.12)"><svg viewBox="0 0 24 24" fill="none" stroke="#DAA21E" stroke-width="2"><line x1="2" y1="12" x2="6" y2="12"/><line x1="10" y1="6" x2="10" y2="18"/><line x1="14" y1="9" x2="14" y2="15"/><line x1="18" y1="4" x2="18" y2="20"/><line x1="22" y1="12" x2="22" y2="12"/></svg></div>
+      <div><div class="s-rtitle">Market data</div><div class="s-rsub">${state.settings.polygonApiKey?'Polygon.io connected':'No API key — tap to add'}</div></div></div>
+      <div class="s-row-r"><span class="s-chip ${state.settings.polygonApiKey?'chip-green':'chip-red'}">${state.settings.polygonApiKey?'On':'Off'}</span><span class="s-chev">›</span></div>
+    </div>
   </div>
   <p class="s-section-label">Commissions</p>
   <div class="s-group">
@@ -1747,6 +1784,37 @@ function renderSettingsSub(id,el){
       </div>
     </div></div>`:''}
     `;
+  }else if(id==='marketdata'){
+    const key=state.settings.polygonApiKey||'';
+    el.innerHTML=S_BACK+`<div class="sub-title">Market data</div>
+    <div class="sub-desc">Connect Polygon.io to see live stock prices, option bid/ask, implied volatility, and Greeks on your open positions. Tap <b>↻ Live</b> on the dashboard to refresh.</div>
+    <div class="s-group"><div style="padding:20px 16px 16px">
+      <div class="field" style="margin-bottom:0">
+        <label>Polygon.io API key</label>
+        <input type="text" id="poly-key-input" value="${esc(key)}" placeholder="Paste your API key here"
+          style="font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.03em"
+          oninput="state.settings.polygonApiKey=this.value.trim();save();renderSettingsMain();">
+        <div style="font-size:11px;color:var(--text3);margin-top:6px">Stored on your device only — never sent to any server other than Polygon.io. Free plan at <b>polygon.io</b> gives delayed data.</div>
+      </div>
+    </div></div>
+    ${key?`<div class="s-group"><div style="padding:14px 16px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:8px;height:8px;border-radius:50%;background:var(--pos)"></div>
+        <div style="font-size:13px;color:var(--ink2)">API key saved — tap <b>↻ Live</b> on the dashboard to fetch prices</div>
+      </div>
+    </div></div>
+    <div style="padding:12px 16px">
+      <button class="btn btn-blue" style="width:100%" onclick="switchTab('dashboard');fetchLivePrices()">Fetch live prices now</button>
+    </div>`:''}
+    <div class="s-group"><div style="padding:14px 16px">
+      <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">What you'll see per position</div>
+      <div style="font-size:12px;color:var(--text3);line-height:1.8">
+        📈 Current stock price &amp; OTM/ITM distance<br>
+        💰 Option bid / ask &amp; % of premium captured<br>
+        🔢 Live implied volatility &amp; delta<br>
+        ⏱ Timestamp of last refresh
+      </div>
+    </div></div>`;
   }else if(id==='equitySnaps'){
     const snaps=state.settings.equitySnapshots||{};
     const dep=state.settings.deposited||0;
@@ -1926,7 +1994,7 @@ function renderSettingsSub(id,el){
       <div><div class="s-rtitle" style="color:var(--neg)">Clear all data</div></div></div>
       <div class="s-row-r"><span class="s-chev" style="color:var(--neg)">›</span></div>
     </div></div>
-    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-05-06 17:38</div>`;
+    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-05-09 16:31</div>`;
   }
 }
 
@@ -2148,6 +2216,77 @@ function handleImport(event){
 }
 function parseCSVLine(line){const r=[];let cur='';let inQ=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(inQ&&line[i+1]==='"'){cur+='"';i++;}else inQ=!inQ;}else if(c===','&&!inQ){r.push(cur.trim());cur='';}else cur+=c;}r.push(cur.trim());return r;}
 
+// ═══════════════════ LIVE MARKET DATA (POLYGON.IO) ═══════════════
+let _liveData={};  // session cache: tradeId → live data object
+
+function polygonOptionTicker(ticker,expiry,tradeType,strike){
+  if(!expiry||tradeType==='Stock Sale')return null;
+  const exp=expiry.replace(/-/g,'').slice(2);                           // "2026-06-20"→"260620"
+  const cp=['CC','PMCC','Bear Call'].includes(tradeType)?'C':'P';
+  const stk=String(Math.round(strike*1000)).padStart(8,'0');            // 170→"00170000"
+  return`O:${ticker}${exp}${cp}${stk}`;
+}
+
+function liveOtmLabel(stockPrice,strike,tradeType){
+  if(stockPrice==null)return null;
+  const isCall=['CC','PMCC','Bear Call'].includes(tradeType);
+  const diff=isCall?(strike-stockPrice):(stockPrice-strike);            // positive=OTM
+  const label='$'+Math.abs(diff).toFixed(2);
+  if(diff>0)return{text:label+' OTM',color:'var(--pos)'};
+  if(diff<0)return{text:label+' ITM',color:'var(--neg)'};
+  return{text:'AT THE MONEY',color:'var(--gold)'};
+}
+
+async function fetchLivePrices(){
+  const apiKey=state.settings.polygonApiKey;
+  if(!apiKey){toast('Add Polygon API key in Settings → Market data');return;}
+  const open=state.trades.filter(t=>t.status==='open');
+  if(!open.length){toast('No open positions');return;}
+
+  const btn=document.getElementById('live-refresh-btn');
+  if(btn){btn.textContent='⟳ …';btn.disabled=true;}
+
+  const BASE='https://api.polygon.io';
+  await Promise.all(open.map(async t=>{
+    const optTicker=polygonOptionTicker(t.ticker,t.expiry,t.type,t.strike);
+    // Try option snapshot first (includes underlying price + greeks)
+    if(optTicker){
+      try{
+        const r=await fetch(`${BASE}/v3/snapshot/options/${t.ticker}/${optTicker}?apiKey=${apiKey}`);
+        const d=await r.json();
+        if(d.results){
+          const res=d.results;
+          const bid=res.last_quote?.bid;const ask=res.last_quote?.ask;
+          const mid=(bid!=null&&ask!=null)?(bid+ask)/2:(res.last_trade?.price);
+          _liveData[t.id]={
+            ok:true,
+            stockPrice:res.underlying_asset?.price,
+            bid,ask,mid,
+            iv:res.implied_volatility!=null?(res.implied_volatility*100):null,
+            delta:res.greeks?.delta,
+            theta:res.greeks?.theta,
+            oi:res.open_interest,
+            ts:Date.now()
+          };
+          return;
+        }
+      }catch(e){}
+    }
+    // Fallback: stock price only
+    try{
+      const r=await fetch(`${BASE}/v2/snapshot/locale/us/markets/stocks/tickers/${t.ticker}?apiKey=${apiKey}`);
+      const d=await r.json();
+      const price=d.ticker?.lastTrade?.p||d.ticker?.min?.c||d.ticker?.day?.c;
+      if(price)_liveData[t.id]={ok:true,stockPrice:price,ts:Date.now()};
+    }catch(e){}
+  }));
+
+  if(btn){btn.textContent='↻ Live';btn.disabled=false;}
+  renderDashboard();
+  const n=Object.values(_liveData).filter(x=>x.ok).length;
+  toast('Live: '+n+'/'+open.length+' updated');
+}
+
 // ═══════════════════ MONTH-END EQUITY PROMPT ════════════════════
 function checkMonthEndPrompt(){
   const now=new Date();
@@ -2237,7 +2376,7 @@ function dismissMonthEndPrompt(skipMonth,targetMo){
 }
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzgwNjAyOTgnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzgzMTU0NjYnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
 
 // ═══════════════════ INIT ═══════════════════
 load();
