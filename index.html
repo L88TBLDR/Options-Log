@@ -469,6 +469,21 @@ input[readonly]{background:var(--surface2);color:var(--ink2)}
       </div>
       <div style="font-size:11px;color:var(--text3);margin-top:4px" id="em-fee-hint">Net P&amp;L recalculates automatically.</div>
     </div>
+    <!-- Close details — shown only for closed trades -->
+    <div id="em-close-section" style="display:none;margin-bottom:11px">
+      <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Close details</div>
+      <div class="form-2" style="margin-bottom:11px">
+        <div class="field" style="margin-bottom:0"><label>Close date</label><input id="em-closedDate" type="date"></div>
+        <div class="field" style="margin-bottom:0"><label>Outcome</label>
+          <select id="em-outcome"><option>Expired</option><option>Closed</option><option>Assigned</option><option>Sold</option></select>
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label id="em-closeCost-label">Close cost per contract</label>
+        <input id="em-closeCost" type="number" step="0.01" placeholder="0">
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">P&amp;L recalculates on save.</div>
+    </div>
     <div class="btn-row">
       <button class="btn btn-blue" onclick="confirmEdit()">Save changes</button>
       <button class="btn btn-ghost" onclick="hideModal('edit-modal')">Cancel</button>
@@ -1485,6 +1500,20 @@ function showEdit(id){
       if(hint)hint.textContent='Open leg fee only (position not yet closed).';
     }
   }
+  // Close details section — show only for closed trades
+  const closeSection=document.getElementById('em-close-section');
+  if(closeSection){
+    if(t.status==='closed'){
+      closeSection.style.display='';
+      document.getElementById('em-closedDate').value=t.closedDate||'';
+      document.getElementById('em-outcome').value=t.outcome||'Closed';
+      const ccLbl=document.getElementById('em-closeCost-label');
+      if(ccLbl)ccLbl.textContent=t.type==='Stock'?'Sale price per share':'Close cost per contract';
+      document.getElementById('em-closeCost').value=t.closeCost!=null?t.closeCost:0;
+    }else{
+      closeSection.style.display='none';
+    }
+  }
   document.getElementById('edit-modal').classList.add('show');
 }
 function confirmEdit(){
@@ -1501,15 +1530,31 @@ function confirmEdit(){
   t.delta=parseFloat(document.getElementById('em-delta').value)||0;
   t.notes=document.getElementById('em-notes').value||'';
   // Recalc totalCredit
-  t.totalCredit=t.type==='Stock Sale'?+(t.premium*t.contracts).toFixed(2):+(t.premium*t.contracts*100).toFixed(2);
-  // Apply manually entered fees
+  t.totalCredit=(t.type==='Stock Sale'||t.type==='Stock')?+(t.premium*t.contracts).toFixed(2):+(t.premium*t.contracts*100).toFixed(2);
+  // Apply manually entered fees first so feesTotal is up to date
   const foEl=document.getElementById('em-feesOpen');
   const fcEl=document.getElementById('em-feesClose');
   if(foEl){
     t.feesOpen=parseFloat(foEl.value)||0;
     t.feesClose=t.status==='closed'?(parseFloat(fcEl?.value)||0):0;
     t.feesTotal=+(t.feesOpen+t.feesClose).toFixed(4);
-    if(t.status==='closed'&&t.pnl!=null)t.pnlNet=+(t.pnl-t.feesTotal).toFixed(2);
+  }
+  // Close details — update closedDate, outcome, closeCost and recalc P&L
+  if(t.status==='closed'){
+    const cdEl=document.getElementById('em-closedDate');
+    const outEl=document.getElementById('em-outcome');
+    const ccEl=document.getElementById('em-closeCost');
+    if(cdEl&&cdEl.value)t.closedDate=cdEl.value;
+    if(outEl)t.outcome=outEl.value;
+    if(ccEl){
+      t.closeCost=parseFloat(ccEl.value)||0;
+      if(t.type==='Stock'){
+        t.pnl=+((t.closeCost-t.strike)*t.contracts).toFixed(2);
+      }else{
+        t.pnl=+(t.totalCredit-(t.closeCost*t.contracts*100)).toFixed(2);
+      }
+    }
+    if(t.pnl!=null)t.pnlNet=+(t.pnl-t.feesTotal).toFixed(2);
   }
   save();
   hideModal('edit-modal');
@@ -2108,7 +2153,7 @@ function renderSettingsSub(id,el){
       <div><div class="s-rtitle" style="color:var(--neg)">Clear all data</div></div></div>
       <div class="s-row-r"><span class="s-chev" style="color:var(--neg)">›</span></div>
     </div></div>
-    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-05-09 17:14</div>`;
+    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-05-11 22:44</div>`;
   }
 }
 
@@ -2482,7 +2527,7 @@ function dismissMonthEndPrompt(skipMonth,targetMo){
 }
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzgzMTgwNzMnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3Nzg1MTA2NTYnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
 
 // ═══════════════════ INIT ═══════════════════
 load();
