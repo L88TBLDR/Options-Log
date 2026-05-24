@@ -1469,14 +1469,10 @@ function confirmLogStock(){
 function logCCFromStock(stockId){
   const t=state.trades.find(x=>x.id===stockId);if(!t)return;
   switchTab('log');
-  setTimeout(()=>{
-    const te=document.getElementById('lf-ticker');if(te)te.value=t.ticker;
-    setLogType('CC');
-    setTimeout(()=>{
-      const ce=document.getElementById('lf-contracts');if(ce)ce.value=Math.max(1,Math.floor(t.contracts/100));
-      updateLogCalc();
-    },60);
-  },60);
+  setLogType('CC');
+  const te=document.getElementById('lf-ticker');if(te)te.value=t.ticker;
+  const ce=document.getElementById('lf-contracts');if(ce)ce.value=Math.max(1,Math.floor(t.contracts/100));
+  updateLogCalc();
 }
 function delTrade(id){if(!confirm('Delete this trade?'))return;state.trades=state.trades.filter(x=>x.id!==id);save();toast('Deleted','warn');renderDashboard();}
 function showEdit(id){
@@ -1658,7 +1654,7 @@ function renderHistory(){
   const outcomeChips=['','Open','Expired','Closed','Assigned','Sold']
     .map((o,i)=>`<button class="hist-chip${histFilters.outcome===o?' active':''}" onclick="histFilters.outcome='${o}';renderHistory()">${o||'All'}</button>`).join('');
   // Row 3: Strategy chips
-  const typeChips=['','CSP','CC','PMCC','Diagonal','Bull Put','Bear Call','Stock Sale']
+  const typeChips=['','CSP','CC','PMCC','Diagonal','Bull Put','Bear Call','Stock Sale','Stock']
     .map(t=>`<button class="hist-chip${histFilters.type===t?' active':''}" onclick="histFilters.type='${t}';renderHistory()">${t||'All types'}</button>`).join('');
 
   const mkOpt=(v,l,cur)=>`<option value="${v}"${cur===v?' selected':''}>${l}</option>`;
@@ -2165,7 +2161,7 @@ function renderSettingsSub(id,el){
       <div><div class="s-rtitle" style="color:var(--neg)">Clear all data</div></div></div>
       <div class="s-row-r"><span class="s-chev" style="color:var(--neg)">›</span></div>
     </div></div>
-    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-05-24 14:45</div>`;
+    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-05-24 15:04</div>`;
   }
 }
 
@@ -2214,7 +2210,12 @@ function renderFeeSubScreen(el){
       <div class="field" style="margin-bottom:0"><label>Min platform fee ($)</label><input type="number" value="${f.minPlatformFee||0}" step="0.01" oninput="state.settings.fees.minPlatformFee=parseFloat(this.value)||0;save()"></div>
     </div>
     <div class="field" style="margin-bottom:12px"><label>Stock sale fee ($, flat)</label><input type="number" value="${f.stockRate||0}" step="0.01" oninput="state.settings.fees.stockRate=parseFloat(this.value)||0;save()"></div>
-    <button class="btn btn-ghost" style="font-size:13px;font-weight:600" onclick="saveCustomPreset()">💾 Save as named preset…</button>
+    <div id="cp-name-row" style="display:none;flex-direction:row;gap:8px;margin-bottom:0">
+      <input id="cp-name-input" type="text" placeholder="e.g. My Broker" style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--chip);color:var(--ink);font-size:13px" onkeydown="if(event.key==='Enter')saveCustomPreset()">
+      <button class="btn btn-blue" style="font-size:13px;padding:8px 12px" onclick="saveCustomPreset()">Save</button>
+      <button class="btn btn-ghost" style="font-size:13px;padding:8px 12px" onclick="document.getElementById('cp-name-row').style.display='none'">✕</button>
+    </div>
+    <button id="cp-save-btn" class="btn btn-ghost" style="font-size:13px;font-weight:600" onclick="const r=document.getElementById('cp-name-row');r.style.display='flex';document.getElementById('cp-name-input').focus()">💾 Save as named preset…</button>
   </div></div>`:''}
 
   <p class="s-section-label">Pass-through fees</p>
@@ -2255,8 +2256,9 @@ function selectFeePreset(key){
   save();renderFeeSubScreen(document.getElementById('s-sub-view'));toast('Preset saved · applies to new trades');
 }
 function saveCustomPreset(){
-  const name=prompt('Name for this preset:','My Broker');
-  if(!name||!name.trim())return;
+  const inp=document.getElementById('cp-name-input');
+  const name=(inp?.value||'').trim();
+  if(!name){if(inp){inp.style.borderColor='var(--neg)';inp.focus();}return;}
   const f=state.settings.fees;
   const id='cp-'+Date.now();
   if(!state.settings.customPresets)state.settings.customPresets=[];
@@ -2343,7 +2345,7 @@ function importFullBackup(event){
       }
       save();
       setTheme(state.settings.theme||'dark');
-      renderDashboard();renderSettings();
+      renderDashboard();renderHistory();renderAnalytics();renderSettings();
       toast('Backup restored — '+state.trades.length+' trades + all settings ✓');
     }catch(err){toast('Import failed: '+err.message,'err');}
   };
@@ -2540,7 +2542,7 @@ function dismissMonthEndPrompt(skipMonth,targetMo){
 }
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3Nzk2MDUxMzcnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3Nzk2MDYyNzAnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
 
 // ═══════════════════ INIT ═══════════════════
 load();
