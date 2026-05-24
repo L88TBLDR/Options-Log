@@ -452,7 +452,11 @@ input[readonly]{background:var(--surface2);color:var(--ink2)}
     </div>
     <div class="form-2" style="margin-bottom:11px">
       <div class="field" style="margin-bottom:0"><label>Delta</label><input id="em-delta" type="number" step="0.01"></div>
+      <div class="field" style="margin-bottom:0"><label>Entry price</label><input id="em-underlying" type="number" step="0.01" placeholder="optional"></div>
+    </div>
+    <div class="form-2" style="margin-bottom:11px">
       <div class="field" style="margin-bottom:0"><label>Notes</label><input id="em-notes" type="text" placeholder="optional"></div>
+      <div class="field" style="margin-bottom:0"></div>
     </div>
     <!-- Fees — always visible -->
     <div id="em-fee-section" style="display:none;margin-bottom:11px">
@@ -713,7 +717,7 @@ function renderDashboard(){
   const targetMode=state.settings.monthlyTargetMode||'amount';
   // Current month net realized P&L
   const now=new Date();
-  const curMonth=now.toISOString().slice(0,7);
+  const curMonth=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   const thisMonthNet=closed
     .filter(t=>t.closedDate&&t.closedDate.slice(0,7)===curMonth)
     .reduce((s,t)=>s+(t.pnlNet!=null?t.pnlNet:netPnl(t)||0),0);
@@ -1023,7 +1027,7 @@ function renderAnalytics(){
   const avgAroc=arocsV.length?(arocsV.reduce((s,v)=>s+v,0)/arocsV.length).toFixed(1):'0.0';
   const avgDTE=opts.length?Math.round(opts.reduce((s,t)=>s+t.dte,0)/opts.length):0;
   const nowAna=new Date();
-  const curMonAna=nowAna.toISOString().slice(0,7);
+  const curMonAna=`${nowAna.getFullYear()}-${String(nowAna.getMonth()+1).padStart(2,'0')}`;
   const thisMonOpts=opts.filter(t=>t.closedDate&&t.closedDate.slice(0,7)===curMonAna);
   const thisMonNet=thisMonOpts.reduce((s,t)=>s+(t.pnlNet!=null?t.pnlNet:t.pnl||0),0);
   const equityAna=totalCapitalUSD();
@@ -1080,7 +1084,7 @@ function renderAnalytics(){
     const pl=tc.reduce((s,t)=>s+(t.pnl||0),0);
     const cap=tc.reduce((s,t)=>s+t.strike*t.contracts*100,0);
     const pe=tc.reduce((s,t)=>s+t.totalCredit,0);
-    const peff=pe>0?+(pl/pe*10).toFixed(1):0; // $/contract synthetic
+    const peff=pe>0?+(pl/pe*100).toFixed(1):0; // premium efficiency % per ticker
     const capEf=cap>0?+(pl/cap*100).toFixed(2):0;
     return{t:tk,peff,capEf};
   });
@@ -1107,7 +1111,7 @@ function renderAnalytics(){
   <div class="card" style="margin-bottom:12px">
     <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
       <div class="card-title" style="margin-bottom:0">Efficiency</div>
-      <span style="font-size:9px;font-weight:700;color:var(--ink3);letter-spacing:.8px">LAST 90 DAYS</span>
+      <span style="font-size:9px;font-weight:700;color:var(--ink3);letter-spacing:.8px">ALL CLOSED TRADES</span>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
       ${_effStatTile('Premium efficiency',premEff+'%','premium kept vs collected','var(--pos)')}
@@ -1204,12 +1208,12 @@ function renderAnalytics(){
       <span style="font-size:9px;font-weight:700;color:var(--ink3);letter-spacing:.8px">BY TICKER</span>
     </div>
     <div style="display:grid;grid-template-columns:44px 1fr 54px 1fr 54px;padding:4px 0;font-size:9px;font-family:'JetBrains Mono',monospace;color:var(--ink3);text-transform:uppercase;letter-spacing:.8px;font-weight:700;border-bottom:1px solid var(--border);margin-bottom:6px">
-      <span>Ticker</span><span>Premium</span><span style="text-align:right">$/c</span><span style="padding-left:8px">Capital</span><span style="text-align:right">ROC</span>
+      <span>Ticker</span><span>Premium</span><span style="text-align:right">Eff%</span><span style="padding-left:8px">Capital</span><span style="text-align:right">ROC</span>
     </div>
     ${effByTicker.map(e=>`<div style="display:grid;grid-template-columns:44px 1fr 54px 1fr 54px;align-items:center;gap:3px;margin-bottom:7px">
       <span class="mono" style="font-size:11px;font-weight:700;color:var(--ink)">${e.t}</span>
       <div style="height:6px;background:var(--chip);border-radius:3px;overflow:hidden"><div style="width:${Math.min(100,Math.abs(e.peff)/maxPeff*100)}%;height:100%;background:${e.peff>=0?'var(--pos)':'var(--neg)'};border-radius:3px"></div></div>
-      <div style="text-align:right"><span class="mono" style="font-size:10px;color:${e.peff>=0?'var(--pos)':'var(--neg)'}">$${e.peff}</span></div>
+      <div style="text-align:right"><span class="mono" style="font-size:10px;color:${e.peff>=0?'var(--pos)':'var(--neg)'}">${e.peff}%</span></div>
       <div style="height:6px;background:var(--chip);border-radius:3px;overflow:hidden;margin-left:8px"><div style="width:${Math.min(100,Math.abs(e.capEf)/maxCapEf*100)}%;height:100%;background:${e.capEf>=0?'var(--accent)':'var(--neg)'};border-radius:3px"></div></div>
       <div style="text-align:right"><span class="mono" style="font-size:10px;color:${e.capEf>=0?'var(--accent)':'var(--neg)'}">${e.capEf}%</span></div>
     </div>`).join('')||'<div class="empty">No data</div>'}
@@ -1487,6 +1491,7 @@ function showEdit(id){
   document.getElementById('em-contracts').value=t.contracts||1;
   document.getElementById('em-iv').value=t.iv||'';
   document.getElementById('em-delta').value=t.delta||'';
+  document.getElementById('em-underlying').value=t.underlying||'';
   document.getElementById('em-notes').value=t.notes||'';
   // Fee fields — always visible
   const feeSection=document.getElementById('em-fee-section');
@@ -1533,6 +1538,8 @@ function confirmEdit(){
   t.contracts=parseInt(document.getElementById('em-contracts').value)||1;
   t.iv=parseFloat(document.getElementById('em-iv').value)||0;
   t.delta=parseFloat(document.getElementById('em-delta').value)||0;
+  const _ul=document.getElementById('em-underlying');
+  if(_ul)t.underlying=parseFloat(_ul.value)||null;
   t.notes=document.getElementById('em-notes').value||'';
   // Recalc totalCredit
   t.totalCredit=(t.type==='Stock Sale'||t.type==='Stock')?+(t.premium*t.contracts).toFixed(2):+(t.premium*t.contracts*100).toFixed(2);
@@ -1669,8 +1676,8 @@ function renderHistory(){
   if(histFilters.type)trades=trades.filter(t=>t.type===histFilters.type);
   if(histFilters.outcome==='Open')trades=trades.filter(t=>t.status==='open');
   else if(histFilters.outcome)trades=trades.filter(t=>t.outcome===histFilters.outcome);
-  if(histFilters.dateFrom)trades=trades.filter(t=>(t.openDate||'')>=histFilters.dateFrom);
-  if(histFilters.dateTo)trades=trades.filter(t=>(t.openDate||'')<=histFilters.dateTo);
+  if(histFilters.dateFrom)trades=trades.filter(t=>(t.closedDate||t.openDate||'')>=histFilters.dateFrom);
+  if(histFilters.dateTo)trades=trades.filter(t=>(t.closedDate||t.openDate||'')<=histFilters.dateTo);
   const closedTrades=trades.filter(t=>t.status==='closed');
   const totalPnl=closedTrades.reduce((s,t)=>s+(t.pnl||0),0);
   const totalPremium=closedTrades.reduce((s,t)=>s+(t.totalCredit||0),0);
@@ -2158,7 +2165,7 @@ function renderSettingsSub(id,el){
       <div><div class="s-rtitle" style="color:var(--neg)">Clear all data</div></div></div>
       <div class="s-row-r"><span class="s-chev" style="color:var(--neg)">›</span></div>
     </div></div>
-    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-05-18 22:28</div>`;
+    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-05-24 14:45</div>`;
   }
 }
 
@@ -2451,6 +2458,7 @@ function checkMonthEndPrompt(){
   if(day>7)return;
   // Record starting equity for the CURRENT month (local time, no UTC shift)
   const targetMo=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const targetMoDate=new Date(targetMo+'-15');
   const targetMoLabel=targetMoDate.toLocaleString('default',{month:'long',year:'numeric'});
   const snaps=state.settings.equitySnapshots||{};
   // Already recorded → no prompt
@@ -2532,7 +2540,7 @@ function dismissMonthEndPrompt(skipMonth,targetMo){
 }
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3NzkxMTQ0OTYnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3Nzk2MDUxMzcnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
 
 // ═══════════════════ INIT ═══════════════════
 load();
