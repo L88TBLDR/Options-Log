@@ -2027,7 +2027,7 @@ function renderSettingsSub(id,el){
           <div style="display:flex;align-items:center;gap:8px">
             <input type="number" step="100" placeholder="${Math.round(computed)}" value="${hasSnap?snap:''}"
               style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--chip);color:var(--ink);font-size:14px;font-family:'JetBrains Mono',monospace"
-              oninput="if(!state.settings.equitySnapshots)state.settings.equitySnapshots={};const v=parseFloat(this.value);if(v>0){state.settings.equitySnapshots['${mo}']=v;}else{delete state.settings.equitySnapshots['${mo}'];}save();renderAnalytics();"
+              onchange="setEquitySnap('${mo}',parseFloat(this.value)||0);renderAnalytics();renderDashboard();"
             >
             <div style="font-size:10px;color:var(--ink3);white-space:nowrap">Est. $${Math.round(computed).toLocaleString('en-US')}</div>
           </div>
@@ -2161,7 +2161,7 @@ function renderSettingsSub(id,el){
       <div><div class="s-rtitle" style="color:var(--neg)">Clear all data</div></div></div>
       <div class="s-row-r"><span class="s-chev" style="color:var(--neg)">›</span></div>
     </div></div>
-    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-05-24 15:04</div>`;
+    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-06-03 21:22</div>`;
   }
 }
 
@@ -2518,19 +2518,50 @@ function showMonthEndPrompt(prevMo,prevMoLabel){
   setTimeout(()=>{const inp=document.getElementById('meq-input');if(inp){inp.focus();inp.select();}},300);
 }
 
+// Sync the dashboard capital figure to match a snapshot value (only when
+// the snapshot is for the current local month — that value IS your current
+// portfolio). Scales accounts proportionally to preserve multi-currency split.
+function syncCapitalToSnapshot(mo,val){
+  const now=new Date();
+  const nowMo=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  if(mo!==nowMo||!(val>0))return false;
+  const curTotal=totalCapitalUSD();
+  if(curTotal>0){
+    const ratio=val/curTotal;
+    state.settings.capital.forEach(c=>{
+      if(c.enabled&&c.amount>0)c.amount=+(c.amount*ratio).toFixed(2);
+    });
+  }else{
+    const usd=state.settings.capital.find(c=>c.id==='usd');
+    if(usd){usd.amount=val;usd.enabled=true;}
+    else state.settings.capital.push({id:'usd',label:'USD Account',currency:'USD',amount:val,enabled:true});
+  }
+  return true;
+}
+
+function setEquitySnap(mo,val){
+  if(!state.settings.equitySnapshots)state.settings.equitySnapshots={};
+  if(val>0){
+    state.settings.equitySnapshots[mo]=val;
+    syncCapitalToSnapshot(mo,val);
+  }else{
+    delete state.settings.equitySnapshots[mo];
+  }
+  save();
+}
+
 function saveMonthEndEquity(targetMo){
   const inp=document.getElementById('meq-input');
   const val=parseFloat(inp?inp.value:0);
   if(!val||val<=0){inp&&(inp.style.borderColor='var(--neg)');return;}
-  if(!state.settings.equitySnapshots)state.settings.equitySnapshots={};
-  state.settings.equitySnapshots[targetMo]=val;
+  setEquitySnap(targetMo,val);
   // Mark this target month as handled so we don't re-prompt
   state.settings.lastSnapReminder=targetMo;
   save();
   const modal=document.getElementById('meq-modal');
   if(modal)modal.remove();
   toast('Saved $'+Math.round(val).toLocaleString('en-US')+' for '+targetMo,'success');
-  renderAnalytics();
+  renderDashboard();renderAnalytics();
 }
 
 function dismissMonthEndPrompt(skipMonth,targetMo){
@@ -2542,7 +2573,7 @@ function dismissMonthEndPrompt(skipMonth,targetMo){
 }
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3Nzk2MDYyNzAnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3ODA0OTI5NzInO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
 
 // ═══════════════════ INIT ═══════════════════
 load();
