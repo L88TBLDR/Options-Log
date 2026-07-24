@@ -946,7 +946,9 @@ function renderCapitalWidget(openTrades){
   const ccOpen=open.filter(t=>['CC','PMCC'].includes(t.type));
   const cspNotional=cspOpen.reduce((s,t)=>s+t.strike*t.contracts*100,0);
   const ccNotional=ccOpen.reduce((s,t)=>s+t.strike*t.contracts*100,0);
-  const notional=cspNotional+ccNotional;
+  // Stock holdings: strike = cost basis per share, contracts = share count
+  const stockNotional=open.filter(t=>t.type==='Stock').reduce((s,t)=>s+t.strike*t.contracts,0);
+  const notional=cspNotional+ccNotional+stockNotional;
   const free=equity>0?equity-notional:0;
   const util=equity>0?(notional/equity)*100:0;
   const utilCol=util>80?'var(--neg)':util>60?'var(--warn)':'var(--blue)';
@@ -1260,17 +1262,17 @@ function renderAnalytics(){
 // ═══════════════════ LOG FORM ═══════════════════
 const ALL_LOG_FIELDS={
   ticker:{label:'Ticker',required:true,type:'text',placeholder:'CRWV'},
-  type:{label:'Strategy',required:true,type:'select',options:['CSP','CC','PMCC','Diagonal','Bull Put','Bear Call','Stock Sale']},
+  type:{label:'Strategy',required:true,type:'select',options:['CSP','CC','PMCC','Diagonal','Bull Put','Bear Call','Stock Sale','Stock']},
   openDate:{label:'Open date',required:true,type:'date'},
-  expiry:{label:'Expiry',required:false,type:'date',hideFor:['Stock Sale']},
-  strike:{label:'Strike',required:false,type:'number',placeholder:'77',step:'0.5'},
-  premium:{label:'Premium/sh',required:false,type:'number',placeholder:'1.32',step:'0.01'},
-  contracts:{label:'Contracts',required:false,type:'number',placeholder:'1',step:'1',default:'1'},
-  underlying:{label:'Entry price',required:false,type:'number',placeholder:'e.g. 85.50',step:'0.01',hideFor:['Stock Sale']},
-  iv:{label:'IV%',required:false,type:'number',placeholder:'90',step:'0.1',hideFor:['Stock Sale']},
-  delta:{label:'Delta',required:false,type:'number',placeholder:'-0.25',step:'0.01',hideFor:['Stock Sale']},
-  dte:{label:'DTE',required:false,type:'number',readonly:true,hideFor:['Stock Sale']},
-  maxProfit:{label:'Max profit',required:false,type:'number',readonly:true,hideFor:['Stock Sale']},
+  expiry:{label:'Expiry',required:false,type:'date',hideFor:['Stock Sale','Stock']},
+  strike:{label:'Strike',required:false,type:'number',placeholder:'77',step:'0.5',labelFor:{Stock:'Buy price/sh'}},
+  premium:{label:'Premium/sh',required:false,type:'number',placeholder:'1.32',step:'0.01',hideFor:['Stock']},
+  contracts:{label:'Contracts',required:false,type:'number',placeholder:'1',step:'1',default:'1',labelFor:{Stock:'Shares'}},
+  underlying:{label:'Entry price',required:false,type:'number',placeholder:'e.g. 85.50',step:'0.01',hideFor:['Stock Sale','Stock']},
+  iv:{label:'IV%',required:false,type:'number',placeholder:'90',step:'0.1',hideFor:['Stock Sale','Stock']},
+  delta:{label:'Delta',required:false,type:'number',placeholder:'-0.25',step:'0.01',hideFor:['Stock Sale','Stock']},
+  dte:{label:'DTE',required:false,type:'number',readonly:true,hideFor:['Stock Sale','Stock']},
+  maxProfit:{label:'Max profit',required:false,type:'number',readonly:true,hideFor:['Stock Sale','Stock']},
   notes:{label:'Notes',required:false,type:'text',placeholder:'e.g. Wheel leg 2'},
 };
 function renderLogForm(){
@@ -1280,7 +1282,7 @@ function renderLogForm(){
   let html='';let pair=[];
 
   // Strategy chips row replaces the select
-  const STRAT_TYPES=['CSP','CC','PMCC','Diagonal','Bull Put','Bear Call','Stock Sale'];
+  const STRAT_TYPES=['CSP','CC','PMCC','Diagonal','Bull Put','Bear Call','Stock Sale','Stock'];
   const chipsHtml=`<div class="field" style="margin-bottom:8px">
     <label>Strategy *</label>
     <input type="hidden" id="lf-type" value="${esc(curType)}">
@@ -1290,9 +1292,10 @@ function renderLogForm(){
   toShow.forEach((k,i)=>{
     if(k==='type')return; // replaced by chips
     const f=ALL_LOG_FIELDS[k];if(f.hideFor?.includes(curType))return;
+    const lbl=(f.labelFor&&f.labelFor[curType])||f.label;
     const inp=f.readonly?`<input type="number" id="lf-${k}" readonly>`
       :`<input type="${f.type}" id="lf-${k}" placeholder="${f.placeholder||''}" step="${f.step||''}" value="${f.default||''}" oninput="updateLogCalc()">`;
-    pair.push(`<div class="field" style="margin-bottom:0"><label>${f.label}${f.required?' *':''}</label>${inp}</div>`);
+    pair.push(`<div class="field" style="margin-bottom:0"><label>${lbl}${f.required?' *':''}</label>${inp}</div>`);
     if(pair.length===2){html+=`<div class="form-2 form-field-wrap">${pair.join('')}</div>`;pair=[];}
   });
   if(pair.length)html+=`<div class="form-field-wrap">${pair[0]}</div>`;
@@ -1329,15 +1332,30 @@ function updateLogCalc(){
 
   calcEl.style.display='block';
 
-  const totalPremium=+(premium*contracts*100).toFixed(2);
-  const collateral=['CSP','Bull Put','Diagonal'].includes(type)?+(strike*contracts*100).toFixed(2):0;
-  const yieldPct=collateral>0?+((totalPremium/collateral)*100).toFixed(2):null;
-  const annPct=yieldPct!=null&&dte>0?+(yieldPct*(365/dte)).toFixed(1):null;
-
   const cell=(lbl,val,color)=>`<div style="padding:10px 12px">
     <div style="font-size:9px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px">${lbl}</div>
     <div class="mono" style="font-size:18px;font-weight:700;color:${color||'var(--ink)'}">${val}</div>
   </div>`;
+
+  if(type==='Stock'){
+    const cost=+(strike*contracts).toFixed(2);
+    calcEl.innerHTML=`<div class="card" style="margin-bottom:0">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <div class="card-title" style="margin-bottom:0">Live calc</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--border)">
+        ${cell('Shares',contracts||'—','')}
+        ${cell('Total cost',cost?'$'+cost.toLocaleString('en-US',{maximumFractionDigits:2}):'—','var(--accent)')}
+      </div>
+    </div>`;
+    return;
+  }
+
+  // Stock Sale stores premium per share with no ×100 contract multiplier
+  const totalPremium=type==='Stock Sale'?+(premium*contracts).toFixed(2):+(premium*contracts*100).toFixed(2);
+  const collateral=['CSP','Bull Put','Diagonal'].includes(type)?+(strike*contracts*100).toFixed(2):0;
+  const yieldPct=collateral>0?+((totalPremium/collateral)*100).toFixed(2):null;
+  const annPct=yieldPct!=null&&dte>0?+(yieldPct*(365/dte)).toFixed(1):null;
 
   calcEl.innerHTML=`<div class="card" style="margin-bottom:0">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
@@ -1363,7 +1381,8 @@ function logTrade(){
   const type=document.getElementById('lf-type')?.value||'CSP';
   const openDate=document.getElementById('lf-openDate')?.value;
   if(!ticker||!openDate){toast('Ticker and open date required','err');return;}
-  const expiry=type==='Stock Sale'?null:(document.getElementById('lf-expiry')?.value||null);
+  const expiry=(type==='Stock Sale'||type==='Stock')?null:(document.getElementById('lf-expiry')?.value||null);
+  if(type==='Stock'&&!(parseFloat(document.getElementById('lf-strike')?.value)>0)){toast('Enter buy price per share','err');return;}
   const strike=parseFloat(document.getElementById('lf-strike')?.value)||0;
   const premium=parseFloat(document.getElementById('lf-premium')?.value)||0;
   const contracts=parseInt(document.getElementById('lf-contracts')?.value)||1;
@@ -1373,7 +1392,7 @@ function logTrade(){
     iv:parseFloat(document.getElementById('lf-iv')?.value)||0,
     delta:parseFloat(document.getElementById('lf-delta')?.value)||0,
     dte,notes:document.getElementById('lf-notes')?.value||'',
-    totalCredit:type==='Stock Sale'?+(premium*contracts).toFixed(2):+(premium*contracts*100).toFixed(2),
+    totalCredit:type==='Stock'?0:type==='Stock Sale'?+(premium*contracts).toFixed(2):+(premium*contracts*100).toFixed(2),
     status:'open',closedDate:null,closeCost:0,outcome:null,pnl:null
   };
   const fc=calcFees(trade,null);
@@ -2161,7 +2180,7 @@ function renderSettingsSub(id,el){
       <div><div class="s-rtitle" style="color:var(--neg)">Clear all data</div></div></div>
       <div class="s-row-r"><span class="s-chev" style="color:var(--neg)">›</span></div>
     </div></div>
-    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-06-03 21:22</div>`;
+    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-07-24 23:10</div>`;
   }
 }
 
@@ -2573,7 +2592,7 @@ function dismissMonthEndPrompt(skipMonth,targetMo){
 }
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3ODA0OTI5NzInO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3ODQ5MDU4NDAnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
 
 // ═══════════════════ INIT ═══════════════════
 load();
