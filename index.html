@@ -945,9 +945,17 @@ function renderCapitalWidget(openTrades){
   const cspOpen=open.filter(t=>['CSP','Diagonal','Bull Put'].includes(t.type));
   const ccOpen=open.filter(t=>['CC','PMCC'].includes(t.type));
   const cspNotional=cspOpen.reduce((s,t)=>s+t.strike*t.contracts*100,0);
-  const ccNotional=ccOpen.reduce((s,t)=>s+t.strike*t.contracts*100,0);
   // Stock holdings: strike = cost basis per share, contracts = share count
   const stockNotional=open.filter(t=>t.type==='Stock').reduce((s,t)=>s+t.strike*t.contracts,0);
+  // CC contracts covered by held shares use the shares' capital (already counted
+  // via stockNotional) — only uncovered contracts add strike notional
+  const coverLeft={};
+  open.filter(t=>t.type==='Stock').forEach(t=>{coverLeft[t.ticker]=(coverLeft[t.ticker]||0)+t.contracts;});
+  const ccNotional=ccOpen.reduce((s,t)=>{
+    const cover=Math.min(t.contracts,Math.floor((coverLeft[t.ticker]||0)/100));
+    if(cover>0)coverLeft[t.ticker]-=cover*100;
+    return s+(t.contracts-cover)*t.strike*100;
+  },0);
   const notional=cspNotional+ccNotional+stockNotional;
   const free=equity>0?equity-notional:0;
   const util=equity>0?(notional/equity)*100:0;
@@ -1032,7 +1040,9 @@ function renderAnalytics(){
   const curMonAna=`${nowAna.getFullYear()}-${String(nowAna.getMonth()+1).padStart(2,'0')}`;
   const thisMonOpts=opts.filter(t=>t.closedDate&&t.closedDate.slice(0,7)===curMonAna);
   const thisMonNet=thisMonOpts.reduce((s,t)=>s+(t.pnlNet!=null?t.pnlNet:t.pnl||0),0);
-  const equityAna=totalCapitalUSD();
+  // Prefer the recorded start-of-month snapshot — same base the ROC bar chart uses
+  const snapAna=(state.settings.equitySnapshots||{})[curMonAna];
+  const equityAna=snapAna>0?snapAna:totalCapitalUSD();
   const monthlyROC=equityAna>0?((thisMonNet/equityAna)*100):null;
   const mrocColor=monthlyROC!=null&&monthlyROC>=0?'var(--pos)':'var(--neg)';
   const mrocLabel=monthlyROC!=null?(monthlyROC>=0?'+':'')+monthlyROC.toFixed(2)+'%':'—';
@@ -1644,13 +1654,14 @@ function setHistOutcomeChip(_,v){histFilters.outcome=v;renderHistory();}
 function setHistPeriod(v){
   const now=new Date();
   histFilters.period=v;
+  // Format in local time — toISOString shifts dates for non-UTC users
+  const ymd=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   if(v==='thismonth'){
-    histFilters.dateFrom=now.toISOString().slice(0,7)+'-01';
-    histFilters.dateTo=new Date(now.getFullYear(),now.getMonth()+1,0).toISOString().slice(0,10);
+    histFilters.dateFrom=ymd(new Date(now.getFullYear(),now.getMonth(),1));
+    histFilters.dateTo=ymd(new Date(now.getFullYear(),now.getMonth()+1,0));
   }else if(v==='lastmonth'){
-    const d=new Date(now.getFullYear(),now.getMonth()-1,1);
-    histFilters.dateFrom=d.toISOString().slice(0,10);
-    histFilters.dateTo=new Date(now.getFullYear(),now.getMonth(),0).toISOString().slice(0,10);
+    histFilters.dateFrom=ymd(new Date(now.getFullYear(),now.getMonth()-1,1));
+    histFilters.dateTo=ymd(new Date(now.getFullYear(),now.getMonth(),0));
   }else if(v==='thisyear'){
     histFilters.dateFrom=now.getFullYear()+'-01-01';
     histFilters.dateTo=now.getFullYear()+'-12-31';
@@ -2181,7 +2192,7 @@ function renderSettingsSub(id,el){
       <div><div class="s-rtitle" style="color:var(--neg)">Clear all data</div></div></div>
       <div class="s-row-r"><span class="s-chev" style="color:var(--neg)">›</span></div>
     </div></div>
-    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-07-24 23:26</div>`;
+    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-07-24 23:39</div>`;
   }
 }
 
@@ -2455,16 +2466,21 @@ async function fetchLivePrices(){
     }catch(e){}
   }));
 
+  // Drop cached data for trades that are no longer open
+  const openIds=new Set(open.map(t=>t.id));
+  Object.keys(_liveData).forEach(id=>{if(!openIds.has(+id))delete _liveData[id];});
+
+  let n=0;
   open.forEach(t=>{
     const price=priceMap[t.ticker];
     if(price!=null){
       _liveData[t.id]={ok:true,stockPrice:price,prevClose:true,ts:Date.now()};
+      n++;
     }
   });
 
   if(btn){btn.textContent='↻ Live';btn.disabled=false;}
   renderDashboard();
-  const n=Object.values(_liveData).filter(x=>x.ok).length;
   if(n>0){
     toast(n+'/'+open.length+' updated (prev session close)');
   }else{
@@ -2593,7 +2609,32 @@ function dismissMonthEndPrompt(skipMonth,targetMo){
 }
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3ODQ5MDY4MDQnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3ODQ5MDc1OTcnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+
+// ═══════════════════ UPDATE CHECK ═══════════════════
+const BUILD_TS=1784907597;
+let _lastUpdCheck=0;
+async function checkForUpdate(){
+  const now=Date.now();
+  if(now-_lastUpdCheck<10*60*1000)return; // at most every 10 min
+  _lastUpdCheck=now;
+  try{
+    const r=await fetch(location.href,{cache:'no-store'});
+    const txt=await r.text();
+    const m=txt.match(/const BUILD_TS=(\d+)/);
+    if(m&&+m[1]>BUILD_TS)showUpdateBanner();
+  }catch(e){}
+}
+function showUpdateBanner(){
+  if(document.getElementById('upd-banner'))return;
+  const b=document.createElement('div');
+  b.id='upd-banner';
+  b.style.cssText='position:fixed;top:calc(10px + env(safe-area-inset-top,0));left:12px;right:12px;z-index:9999;background:var(--accent);color:#fff;border-radius:12px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,0.35);cursor:pointer';
+  b.innerHTML='<span>New version available</span><span style="font-weight:700">Tap to update ↻</span>';
+  b.onclick=()=>location.reload();
+  document.body.appendChild(b);
+}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkForUpdate();});
 
 // ═══════════════════ INIT ═══════════════════
 load();
@@ -2601,6 +2642,7 @@ setTheme(state.settings.theme||'dark');
 renderLogForm();
 renderDashboard();
 checkMonthEndPrompt();
+setTimeout(checkForUpdate,3000);
 
 </script>
 </body>
