@@ -2156,7 +2156,7 @@ function renderSettingsSub(id,el){
         <div class="s-row-l"><div class="s-icon" style="background:rgba(133,183,235,0.12)"><svg viewBox="0 0 24 24" fill="none" stroke="#85B7EB" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
         <div><div class="s-rtitle">Import full backup</div><div class="s-rsub">Restores all trades + settings exactly</div></div></div>
         <div class="s-row-r">
-          <input type="file" id="backup-file" accept=".json" style="display:none" onchange="importFullBackup(event)">
+          <input type="file" id="backup-file" accept="application/json,text/json,text/plain,.json,.txt" style="display:none" onchange="importFullBackup(event)">
           <button class="btn-sm" onclick="document.getElementById('backup-file').click()">Choose file</button>
         </div>
       </div>
@@ -2171,7 +2171,7 @@ function renderSettingsSub(id,el){
     </div>
     <div class="s-group"><div style="padding:14px 16px">
       <div class="field"><label>CSV import mode</label><select id="import-mode"><option value="merge">Merge — add new trades</option><option value="replace">Replace — overwrite trades only</option></select></div>
-      <input type="file" id="import-file" accept=".csv" style="display:none" onchange="handleImport(event)">
+      <input type="file" id="import-file" accept="text/csv,text/plain,application/vnd.ms-excel,.csv,.txt" style="display:none" onchange="handleImport(event)">
       <button class="btn btn-ghost" style="font-size:13px;font-weight:600" onclick="document.getElementById('import-file').click()">Import from CSV</button>
     </div></div>
 
@@ -2180,7 +2180,7 @@ function renderSettingsSub(id,el){
       <div><div class="s-rtitle" style="color:var(--neg)">Clear all data</div></div></div>
       <div class="s-row-r"><span class="s-chev" style="color:var(--neg)">›</span></div>
     </div></div>
-    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-07-24 23:15</div>`;
+    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-07-24 23:20</div>`;
   }
 }
 
@@ -2592,7 +2592,7 @@ function dismissMonthEndPrompt(skipMonth,targetMo){
 }
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3ODQ5MDYxMzQnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3ODQ5MDY0MzYnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
 
 // ═══════════════════ INIT ═══════════════════
 load();
