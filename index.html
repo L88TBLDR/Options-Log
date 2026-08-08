@@ -995,9 +995,16 @@ function renderCapitalWidget(openTrades){
 // ═══════════════════ ANALYTICS ═══════════════════
 let _anaRange='3M'; // cumulative P&L range
 let _tickerRange='3M'; // ticker P&L range
+let _calMo=null; // P&L calendar month 'YYYY-MM'
 
 function setAnaRange(r){_anaRange=r;renderAnalytics();}
 function setTickerRange(r){_tickerRange=r;renderAnalytics();}
+function setCalMonth(d){
+  const[y,m]=_calMo.split('-').map(Number);
+  const nd=new Date(y,m-1+d,1);
+  _calMo=`${nd.getFullYear()}-${String(nd.getMonth()+1).padStart(2,'0')}`;
+  renderAnalytics();
+}
 
 function _rangePicker(id,val,fn){
   return['1W','1M','3M','YTD','ALL'].map(r=>`<button class="range-btn${val===r?' active':''}" onclick="${fn}('${r}')">${r}</button>`).join('');
@@ -1116,6 +1123,36 @@ function renderAnalytics(){
   const outTotal=outKeys.reduce((s,k)=>s+(outcomes[k]||0),0)||1;
   const outColors=[{k:'Expired',c:'var(--pos)'},{k:'Closed',c:'var(--accent)'},{k:'Assigned',c:'var(--warn)'},{k:'Sold',c:'var(--neg)'}];
 
+  // P&L calendar heatmap data
+  if(!_calMo){const n=new Date();_calMo=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`;}
+  const dayPnl={};
+  closed.forEach(t=>{
+    if(t.closedDate&&t.closedDate.slice(0,7)===_calMo){
+      const v=t.pnlNet!=null?t.pnlNet:netPnl(t)||0;
+      dayPnl[t.closedDate]=(dayPnl[t.closedDate]||0)+v;
+    }
+  });
+  const[calY,calM]=_calMo.split('-').map(Number);
+  const calDays=new Date(calY,calM,0).getDate();
+  const calOffset=(new Date(calY,calM-1,1).getDay()+6)%7; // Monday-first
+  const calMax=Math.max(...Object.values(dayPnl).map(Math.abs),1);
+  const calTotal=Object.values(dayPnl).reduce((s,v)=>s+v,0);
+  const calLabel=new Date(calY,calM-1,1).toLocaleString('default',{month:'long',year:'numeric'});
+  const calCells=[...Array(calOffset).fill(null),...Array.from({length:calDays},(_,i)=>i+1)].map(d=>{
+    if(d==null)return'<div></div>';
+    const ds=_calMo+'-'+String(d).padStart(2,'0');
+    const v=dayPnl[ds];
+    let bg='var(--chip)',txt='var(--ink3)',valHtml='';
+    if(v!=null&&v!==0){
+      const a=(0.18+0.62*Math.abs(v)/calMax).toFixed(2);
+      bg=v>0?`rgba(93,202,165,${a})`:`rgba(240,149,149,${a})`;
+      txt='var(--ink)';
+      valHtml=`<div class="mono" style="font-size:7.5px;font-weight:700;color:${v>0?'var(--pos)':'var(--neg)'}">${v>0?'+':''}${Math.round(v)}</div>`;
+    }
+    return`<div style="aspect-ratio:1;background:${bg};border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px">
+      <div style="font-size:9px;font-weight:600;color:${txt}">${d}</div>${valHtml}</div>`;
+  }).join('');
+
   // ── Build HTML ──
   document.getElementById('analytics-body').innerHTML=`
 
@@ -1190,6 +1227,26 @@ function renderAnalytics(){
           <div style="width:78%;height:${Math.max(2,h)}px;background:${col};border-radius:3px;${pos?'margin-top:auto':'margin-top:0'}"></div>
           <span style="font-size:9px;color:var(--ink3);font-family:'JetBrains Mono',monospace">${mshort}</span>
         </div>`;}).join(''):'<div style="color:var(--ink3);font-size:12px;margin:auto">No closed trades</div>'}
+    </div>
+  </div>
+
+  <!-- 2b. P&L calendar heatmap -->
+  <div class="card" style="margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div class="card-title" style="margin-bottom:0">P&amp;L calendar</div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <button onclick="setCalMonth(-1)" style="background:var(--chip);border:none;border-radius:8px;width:26px;height:26px;color:var(--ink2);font-size:14px;cursor:pointer;line-height:1">‹</button>
+        <span style="font-size:11px;font-weight:700;color:var(--ink2);min-width:92px;text-align:center">${calLabel}</span>
+        <button onclick="setCalMonth(1)" style="background:var(--chip);border:none;border-radius:8px;width:26px;height:26px;color:var(--ink2);font-size:14px;cursor:pointer;line-height:1">›</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:3px">
+      ${['M','T','W','T','F','S','S'].map(d=>`<div style="text-align:center;font-size:8px;font-weight:700;color:var(--ink3);letter-spacing:.5px">${d}</div>`).join('')}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">${calCells}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+      <span style="font-size:10px;color:var(--ink3)">Net realised P&amp;L per close date</span>
+      <span class="mono" style="font-size:12px;font-weight:700;color:${calTotal>=0?'var(--pos)':'var(--neg)'}">${calTotal!==0?(calTotal>0?'+$':'-$')+Math.abs(calTotal).toFixed(0):'—'}</span>
     </div>
   </div>
 
@@ -2228,7 +2285,7 @@ function renderSettingsSub(id,el){
       <div><div class="s-rtitle" style="color:var(--neg)">Clear all data</div></div></div>
       <div class="s-row-r"><span class="s-chev" style="color:var(--neg)">›</span></div>
     </div></div>
-    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-08-08 10:55</div>`;
+    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-08-08 12:51</div>`;
   }
 }
 
@@ -2645,10 +2702,10 @@ function dismissMonthEndPrompt(skipMonth,targetMo){
 }
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3ODYxNTc3NTknO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3ODYxNjQ2NjknO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
 
 // ═══════════════════ UPDATE CHECK ═══════════════════
-const BUILD_TS=1786157759;
+const BUILD_TS=1786164669;
 let _lastUpdCheck=0;
 async function checkForUpdate(){
   const now=Date.now();
