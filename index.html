@@ -1408,7 +1408,13 @@ function logTrade(){
   };
   const fc=calcFees(trade,null);
   trade.feesOpen=fc.feesOpen;trade.feesClose=0;trade.feesTotal=fc.feesOpen;trade.pnlNet=null;
-  state.trades.unshift(trade);save();clearForm();toast(ticker+' '+type+' logged ✓');switchTab('history');
+  state.trades.unshift(trade);
+  let mergedMsg='';
+  if(type==='Stock'&&consolidateStockLots()){
+    const pos=state.trades.find(x=>x.type==='Stock'&&x.status==='open'&&x.ticker===ticker);
+    mergedMsg=' · avg cost $'+pos.strike.toFixed(2);
+  }
+  save();clearForm();toast(ticker+' '+type+' logged ✓'+mergedMsg);switchTab('history');
 }
 function clearForm(){
   document.querySelectorAll('#log-form input:not([readonly])').forEach(el=>el.value=el.dataset.default||'');
@@ -1493,8 +1499,38 @@ function confirmLogStock(){
     iv:0,delta:0,dte:0,notes:'Assigned from #'+fromId,
     totalCredit:0,status:'open',closedDate:null,closeCost:0,outcome:null,pnl:null,
     feesOpen:0,feesClose:0,feesTotal:0,pnlNet:null,assignedFromId:fromId};
-  state.trades.unshift(trade);save();hideModal('assign-modal');
-  toast(ticker+' stock position logged');renderDashboard();
+  state.trades.unshift(trade);
+  const merged=consolidateStockLots();
+  save();hideModal('assign-modal');
+  if(merged){
+    const pos=state.trades.find(x=>x.type==='Stock'&&x.status==='open'&&x.ticker===ticker);
+    toast(ticker+' shares added · avg cost $'+pos.strike.toFixed(2));
+  }else{
+    toast(ticker+' stock position logged');
+  }
+  renderDashboard();
+}
+// Merge all open Stock lots of the same ticker into one line with a
+// weighted-average cost basis. Runs after logging shares and once at startup.
+function consolidateStockLots(){
+  const byTicker={};
+  let merged=false;
+  state.trades.forEach(t=>{
+    if(t.type!=='Stock'||t.status!=='open')return;
+    const base=byTicker[t.ticker];
+    if(!base){byTicker[t.ticker]=t;return;}
+    const totShares=base.contracts+t.contracts;
+    base.strike=+(((base.strike*base.contracts)+(t.strike*t.contracts))/totShares).toFixed(4);
+    base.underlying=base.strike;
+    base.contracts=totShares;
+    if(t.openDate&&(!base.openDate||t.openDate<base.openDate))base.openDate=t.openDate;
+    base.feesOpen=+((base.feesOpen||0)+(t.feesOpen||0)).toFixed(4);
+    base.feesTotal=+((base.feesTotal||0)+(t.feesTotal||0)).toFixed(4);
+    if(t.notes&&!(base.notes||'').includes(t.notes))base.notes=(base.notes?base.notes+' · ':'')+t.notes;
+    t._drop=true;merged=true;
+  });
+  if(merged)state.trades=state.trades.filter(t=>!t._drop);
+  return merged;
 }
 function logCCFromStock(stockId){
   const t=state.trades.find(x=>x.id===stockId);if(!t)return;
@@ -2192,7 +2228,7 @@ function renderSettingsSub(id,el){
       <div><div class="s-rtitle" style="color:var(--neg)">Clear all data</div></div></div>
       <div class="s-row-r"><span class="s-chev" style="color:var(--neg)">›</span></div>
     </div></div>
-    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-07-24 23:39</div>`;
+    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-08-08 10:55</div>`;
   }
 }
 
@@ -2609,10 +2645,10 @@ function dismissMonthEndPrompt(skipMonth,targetMo){
 }
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3ODQ5MDc1OTcnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3ODYxNTc3NTknO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
 
 // ═══════════════════ UPDATE CHECK ═══════════════════
-const BUILD_TS=1784907597;
+const BUILD_TS=1786157759;
 let _lastUpdCheck=0;
 async function checkForUpdate(){
   const now=Date.now();
@@ -2638,6 +2674,7 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 
 // ═══════════════════ INIT ═══════════════════
 load();
+if(consolidateStockLots())save();
 setTheme(state.settings.theme||'dark');
 renderLogForm();
 renderDashboard();
