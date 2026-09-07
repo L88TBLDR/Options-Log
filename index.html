@@ -383,7 +383,10 @@ input[readonly]{background:var(--surface2);color:var(--ink2)}
         <select id="cm-outcome"><option>Expired</option><option>Closed</option><option>Assigned</option><option>Sold</option></select>
       </div>
     </div>
-    <div class="field"><label id="cm-cost-label">Close cost per contract (0 if expired)</label><input id="cm-cost" type="number" value="0" step="0.01"></div>
+    <div class="form-2" style="margin-bottom:11px">
+      <div class="field" style="margin-bottom:0"><label id="cm-qty-label">Contracts to close</label><input id="cm-qty" type="number" step="1" min="1"></div>
+      <div class="field" style="margin-bottom:0"><label id="cm-cost-label">Close cost per contract (0 if expired)</label><input id="cm-cost" type="number" value="0" step="0.01"></div>
+    </div>
     <div class="btn-row">
       <button class="btn btn-blue" onclick="confirmClose()">Confirm</button>
       <button class="btn btn-ghost" onclick="hideModal('close-modal')">Cancel</button>
@@ -1503,6 +1506,10 @@ function showClose(id){
   const lbl=document.getElementById('cm-cost-label');
   const outRow=document.getElementById('cm-outcome-row');
   const titleEl=document.querySelector('#close-modal .modal-title');
+  const qtyEl=document.getElementById('cm-qty');
+  const qtyLbl=document.getElementById('cm-qty-label');
+  if(qtyEl&&t){qtyEl.value=t.contracts;qtyEl.max=t.contracts;}
+  if(qtyLbl&&t)qtyLbl.textContent=t.type==='Stock'?'Shares to sell':'Contracts to close';
   if(t&&t.type==='Stock'){
     if(titleEl)titleEl.textContent='Sell shares';
     if(lbl)lbl.textContent='Sale price per share';
@@ -1522,17 +1529,34 @@ function hideModal(id){document.getElementById(id||'close-modal').classList.remo
 function confirmClose(){
   const id=parseInt(document.getElementById('cm-id').value);const t=state.trades.find(x=>x.id===id);if(!t)return;
   const cc=parseFloat(document.getElementById('cm-cost').value)||0;
-  t.status='closed';t.closedDate=document.getElementById('cm-date').value;t.outcome=document.getElementById('cm-outcome').value;t.closeCost=cc;
-  if(t.type==='Stock'){
-    // P&L = (sale price − cost basis) × shares
-    t.pnl=+((cc-t.strike)*t.contracts).toFixed(2);
-    const fc=calcFees(t,t.outcome);t.feesOpen=t.feesOpen||0;t.feesClose=fc.feesClose||0;t.feesTotal=(t.feesOpen||0)+t.feesClose;t.pnlNet=+(t.pnl-t.feesTotal).toFixed(2);
-  }else{
-    t.pnl=+(t.totalCredit-(cc*t.contracts*100)).toFixed(2);
-    const fc=calcFees(t,t.outcome);t.feesOpen=t.feesOpen||fc.feesOpen;t.feesClose=fc.feesClose;t.feesTotal=(t.feesOpen||0)+fc.feesClose;t.pnlNet=+(t.pnl-t.feesTotal).toFixed(2);
+  let qty=parseInt(document.getElementById('cm-qty')?.value)||t.contracts;
+  qty=Math.max(1,Math.min(qty,t.contracts));
+  // Partial close: split off the closed portion, keep the rest open
+  let c=t;
+  const origContracts=t.contracts;
+  if(qty<t.contracts){
+    const ratio=qty/t.contracts;
+    c={...t,id:state.nextId++,contracts:qty,
+      totalCredit:+(t.totalCredit*ratio).toFixed(2),
+      feesOpen:+((t.feesOpen||0)*ratio).toFixed(4)};
+    t.contracts-=qty;
+    t.totalCredit=+(t.totalCredit-c.totalCredit).toFixed(2);
+    t.feesOpen=+((t.feesOpen||0)-c.feesOpen).toFixed(4);
+    t.feesTotal=t.feesOpen;
+    state.trades.splice(state.trades.indexOf(t)+1,0,c);
   }
-  save();hideModal('close-modal');toast(t.ticker+' closed · '+(t.pnl>=0?'+':'')+fmt(t.pnl));
-  if(t.outcome==='Assigned'){setTimeout(()=>promptLogStock(t),400);}
+  c.status='closed';c.closedDate=document.getElementById('cm-date').value;c.outcome=document.getElementById('cm-outcome').value;c.closeCost=cc;
+  if(c.type==='Stock'){
+    // P&L = (sale price − cost basis) × shares
+    c.pnl=+((cc-c.strike)*c.contracts).toFixed(2);
+    const fc=calcFees(c,c.outcome);c.feesOpen=c.feesOpen||0;c.feesClose=fc.feesClose||0;c.feesTotal=(c.feesOpen||0)+c.feesClose;c.pnlNet=+(c.pnl-c.feesTotal).toFixed(2);
+  }else{
+    c.pnl=+(c.totalCredit-(cc*c.contracts*100)).toFixed(2);
+    const fc=calcFees(c,c.outcome);c.feesOpen=c.feesOpen||fc.feesOpen;c.feesClose=fc.feesClose;c.feesTotal=(c.feesOpen||0)+fc.feesClose;c.pnlNet=+(c.pnl-c.feesTotal).toFixed(2);
+  }
+  save();hideModal('close-modal');
+  toast(c.ticker+(c!==t?' '+qty+'/'+origContracts:'')+' closed · '+(c.pnl>=0?'+':'')+fmt(c.pnl));
+  if(c.outcome==='Assigned'){setTimeout(()=>promptLogStock(c),400);}
   renderDashboard();
 }
 function promptLogStock(t){
@@ -2285,7 +2309,7 @@ function renderSettingsSub(id,el){
       <div><div class="s-rtitle" style="color:var(--neg)">Clear all data</div></div></div>
       <div class="s-row-r"><span class="s-chev" style="color:var(--neg)">›</span></div>
     </div></div>
-    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-08-08 12:51</div>`;
+    <div style="text-align:center;padding:10px 0 4px;font-size:10px;color:var(--ink3);font-family:'JetBrains Mono',monospace;opacity:0.5">Options Log · build 2026-09-07 13:04</div>`;
   }
 }
 
@@ -2702,10 +2726,10 @@ function dismissMonthEndPrompt(skipMonth,targetMo){
 }
 
 // ═══════════════════ SERVICE WORKER ═══════════════════
-if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3ODYxNjQ2NjknO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
+if('serviceWorker'in navigator){const blob=new Blob([atob('Y29uc3QgQ0FDSEU9J290LXY3LTE3ODg3NTc0ODQnO3NlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsZT0+e2Uud2FpdFVudGlsKGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMuYWRkQWxsKFsnLi8nLF0pKS50aGVuKCgpPT5zZWxmLnNraXBXYWl0aW5nKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2FjdGl2YXRlJyxlPT57ZS53YWl0VW50aWwoY2FjaGVzLmtleXMoKS50aGVuKGtzPT5Qcm9taXNlLmFsbChrcy5maWx0ZXIoaz0+ayE9PUNBQ0hFKS5tYXAoaz0+Y2FjaGVzLmRlbGV0ZShrKSkpKS50aGVuKCgpPT5jbGllbnRzLmNsYWltKCkpKTt9KTtzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJyxlPT57aWYoZS5yZXF1ZXN0Lm1vZGU9PT0nbmF2aWdhdGUnKXtlLnJlc3BvbmRXaXRoKGZldGNoKGUucmVxdWVzdCkudGhlbihyPT57Y29uc3QgY2w9ci5jbG9uZSgpO2NhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGM9PmMucHV0KGUucmVxdWVzdCxjbCkpO3JldHVybiByfSkuY2F0Y2goKCk9PmNhY2hlcy5tYXRjaChlLnJlcXVlc3QpKSk7cmV0dXJuO31lLnJlc3BvbmRXaXRoKGNhY2hlcy5tYXRjaChlLnJlcXVlc3QpLnRoZW4oYz0+Y3x8ZmV0Y2goZS5yZXF1ZXN0KS50aGVuKHI9Pntjb25zdCBjbD1yLmNsb25lKCk7Y2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oY2M9PmNjLnB1dChlLnJlcXVlc3QsY2wpKTtyZXR1cm4gcn0pKSk7fSk7')],{type:'text/javascript'});navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});}
 
 // ═══════════════════ UPDATE CHECK ═══════════════════
-const BUILD_TS=1786164669;
+const BUILD_TS=1788757484;
 let _lastUpdCheck=0;
 async function checkForUpdate(){
   const now=Date.now();
