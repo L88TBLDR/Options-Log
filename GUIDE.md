@@ -221,6 +221,23 @@ Average days-to-expiry at open across all closed trades. Shows your typical time
 ### Monthly ROC Bar Chart
 One bar per calendar month. Each bar = that month's net P&L ÷ equity **at the start of that month** (deposited + all net P&L closed before it). This correctly captures compounding — as your account grows, the denominator grows too.
 
+### Return on Collateral
+Tracks how hard your collateral is working, month by month.
+
+- **Bars** — monthly ROC: net P&L of the option trades closed that month ÷ the collateral those trades tied up. Tap a bar to see the net $, collateral $ and trade count behind it.
+- **Line** — cumulative ROC: all net P&L to date ÷ all collateral used to date, so you can see whether your overall efficiency is trending up or down.
+- **Tiles** — this month, all time (with the total collateral it is measured on), and your best month.
+
+**How collateral is measured**
+
+| Strategy | Collateral |
+|---|---|
+| CSP, Diagonal, Bull Put, Bear Call | Strike × Contracts × 100 |
+| CC, PMCC | **Cost basis of the shares** × Contracts × 100 — taken from the Stock position you hold in that ticker (or, once sold, from the Stock Sale line). Falls back to the strike if no share position is logged. |
+| Stock, Stock Sale | Not counted (no option collateral) |
+
+The same collateral definition feeds the per-trade *Cap %* / *AROC* figures in History, the *ROC* column in Efficiency by ticker, and the Live calc when logging a covered call on shares you already hold. Note this is different from **Monthly ROC** above, which divides by your whole account equity rather than by the collateral actually used.
+
 ### Monthly Net P&L
 Bar chart showing net realised P&L per month (last 6 months). Useful for spotting seasonal patterns or drawdown months.
 
