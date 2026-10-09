@@ -1018,6 +1018,8 @@ function renderCapitalWidget(openTrades){
 let _anaRange='3M'; // cumulative P&L range
 let _tickerRange='3M'; // ticker P&L range
 let _calMo=null; // P&L calendar month 'YYYY-MM'
+let _moRange='6M'; // monthly net P&L range: 6M / 12M / ALL
+function setMoRange(r){_moRange=r;renderAnalytics();}
 
 function setAnaRange(r){_anaRange=r;renderAnalytics();}
 function setTickerRange(r){_tickerRange=r;renderAnalytics();}
@@ -1078,7 +1080,8 @@ function renderAnalytics(){
   // Monthly P&L data (last 6 months)
   const mm={};
   closed.forEach(t=>{if(!t.closedDate)return;const mo=t.closedDate.slice(0,7);const v=t.pnlNet!=null?t.pnlNet:netPnl(t)||0;mm[mo]=(mm[mo]||0)+v;});
-  const months=Object.keys(mm).sort().slice(-6);
+  const allMonths=Object.keys(mm).sort();
+  const months=_moRange==='ALL'?allMonths:allMonths.slice(_moRange==='12M'?-12:-6);
   const mPnl=months.map(mo=>+mm[mo].toFixed(2));
   const mMax=Math.max(...mPnl.map(v=>Math.abs(v)))||1;
 
@@ -1278,10 +1281,10 @@ function renderAnalytics(){
   <div class="card" style="margin-bottom:12px">
     <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
       <div class="card-title" style="margin-bottom:0">Monthly net P&amp;L</div>
-      <span style="font-size:9px;font-weight:700;color:var(--ink3);letter-spacing:.8px">LAST 6 MONTHS</span>
+      <div style="display:flex;gap:3px">${['6M','12M','ALL'].map(r=>`<button class="range-btn${_moRange===r?' active':''}" onclick="setMoRange('${r}')">${r}</button>`).join('')}</div>
     </div>
-    <div style="display:flex;align-items:flex-end;gap:6px;height:110px;padding-top:14px">
-      ${months.length?months.map(mo=>{const v=mm[mo]||0;const h=Math.abs(v)/mMax*70;const pos=v>=0;const col=pos?'var(--pos)':'var(--neg)';const lbl=pos?'+'+Math.round(v):''+Math.round(v);const mshort=new Date(mo+'-01').toLocaleString('default',{month:'short'});return`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
+    <div id="mo-bars" style="display:flex;align-items:flex-end;gap:6px;height:110px;padding-top:14px;overflow-x:auto;-webkit-overflow-scrolling:touch">
+      ${months.length?months.map(mo=>{const v=mm[mo]||0;const h=Math.abs(v)/mMax*70;const pos=v>=0;const col=pos?'var(--pos)':'var(--neg)';const lbl=pos?'+'+Math.round(v):''+Math.round(v);const mshort=new Date(mo+'-01').toLocaleString('default',{month:'short'})+(months.length>12&&mo.endsWith('-01')?' '+mo.slice(2,4):'');return`<div style="flex:1;min-width:${months.length>6?'40px':'0'};display:flex;flex-direction:column;align-items:center;gap:3px">
           <span class="mono" style="font-size:10px;color:${col};white-space:nowrap">${lbl}</span>
           <div style="width:78%;height:${Math.max(2,h)}px;background:${col};border-radius:3px;${pos?'margin-top:auto':'margin-top:0'}"></div>
           <span style="font-size:9px;color:var(--ink3);font-family:'JetBrains Mono',monospace">${mshort}</span>
@@ -1373,6 +1376,9 @@ function renderAnalytics(){
     </div>
   </div>
   `;
+
+  // Monthly P&L strip scrolls; start at the most recent month
+  const moBars=document.getElementById('mo-bars');if(moBars)moBars.scrollLeft=moBars.scrollWidth;
 
   // Chart.js: monthly ROC bars + cumulative ROC line, one % axis
   dc('roc');
