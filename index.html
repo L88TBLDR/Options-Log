@@ -587,7 +587,26 @@ function load(){
 function setTheme(t){state.settings.theme=t;document.documentElement.setAttribute('data-theme',t);const m=document.getElementById('theme-meta');if(m)m.setAttribute('content',t==='dark'?'#0f0f1a':'#f4f5f7');save();}
 let _tt;function toast(msg,type=''){const el=document.getElementById('toast');el.textContent=msg;el.className='toast show'+(type?' toast-'+type:'');clearTimeout(_tt);_tt=setTimeout(()=>el.classList.remove('show'),2400);}
 function calcDTE(expiry,from){if(!expiry)return 0;return Math.max(0,Math.round((new Date(expiry)-(from?new Date(from):new Date()))/86400000));}
-function capEff(t){if(t.type==='Stock Sale'||t.type==='Stock'||t.pnl==null)return null;const cap=t.strike*t.contracts*100;return cap>0?(t.pnl/cap)*100:null;}
+// Cost basis per share of the shares covering a call: the Stock line of the same
+// ticker held when the call was opened, else the Stock Sale that later sold them
+// (its strike is the cost basis). 0 when no share position is logged.
+function stockBasisFor(t){
+  const od=t.openDate||'';
+  const held=state.trades.filter(s=>s.type==='Stock'&&s.ticker===t.ticker&&s.strike>0&&(s.openDate||'')<=od&&(s.status==='open'||!s.closedDate||s.closedDate>=od))
+    .sort((a,b)=>(b.openDate||'').localeCompare(a.openDate||''));
+  if(held.length)return held[0].strike;
+  const sold=state.trades.filter(s=>s.type==='Stock Sale'&&s.ticker===t.ticker&&s.strike>0&&(s.openDate||'')>=od)
+    .sort((a,b)=>(a.openDate||'').localeCompare(b.openDate||''));
+  return sold.length?sold[0].strike:0;
+}
+// Capital backing a trade. Puts: cash secured at strike. Covered calls: the cost
+// basis of the shares held (falls back to strike when no share position is logged).
+function collateral(t){
+  if(t.type==='Stock'||t.type==='Stock Sale')return 0;
+  if(t.type==='CC'||t.type==='PMCC'){const b=stockBasisFor(t);if(b>0)return b*t.contracts*100;}
+  return t.strike*t.contracts*100;
+}
+function capEff(t){if(t.pnl==null)return null;const cap=collateral(t);return cap>0?(t.pnl/cap)*100:null;}
 function aroc(t){const ce=capEff(t);return(ce!==null&&t.dte>0)?(ce/t.dte)*365:null;}
 function netPnl(t){if(t.pnl==null)return null;return+(t.pnl-(t.feesTotal||0)).toFixed(2);}
 function badgeClass(type){return{CSP:'b-csp',CC:'b-cc',Diagonal:'b-diag','Stock Sale':'b-stock',Stock:'b-stock'}[type]||'b-other';}
@@ -999,6 +1018,8 @@ function renderCapitalWidget(openTrades){
 let _anaRange='3M'; // cumulative P&L range
 let _tickerRange='3M'; // ticker P&L range
 let _calMo=null; // P&L calendar month 'YYYY-MM'
+let _moRange='6M'; // monthly net P&L range: 6M / 12M / ALL
+function setMoRange(r){_moRange=r;renderAnalytics();}
 
 function setAnaRange(r){_anaRange=r;renderAnalytics();}
 function setTickerRange(r){_tickerRange=r;renderAnalytics();}
@@ -1039,7 +1060,6 @@ function renderAnalytics(){
   const grossPnl=opts.reduce((s,t)=>s+(t.pnl||0),0);
   const totalCred=opts.reduce((s,t)=>s+t.totalCredit,0);
   const premEff=totalCred>0?((grossPnl/totalCred)*100).toFixed(1):'0.0';
-  const capRisk=opts.reduce((s,t)=>s+t.strike*t.contracts*100,0);
   const totalNetPnl=closed.reduce((s,t)=>s+(t.pnlNet!=null?t.pnlNet:netPnl(t)||0),0);
   const equityForEff=totalCapitalUSD();
   const capEffTot=equityForEff>0?((totalNetPnl/equityForEff)*100).toFixed(2):'0.00';
@@ -1060,7 +1080,8 @@ function renderAnalytics(){
   // Monthly P&L data (last 6 months)
   const mm={};
   closed.forEach(t=>{if(!t.closedDate)return;const mo=t.closedDate.slice(0,7);const v=t.pnlNet!=null?t.pnlNet:netPnl(t)||0;mm[mo]=(mm[mo]||0)+v;});
-  const months=Object.keys(mm).sort().slice(-6);
+  const allMonths=Object.keys(mm).sort();
+  const months=_moRange==='ALL'?allMonths:allMonths.slice(_moRange==='12M'?-12:-6);
   const mPnl=months.map(mo=>+mm[mo].toFixed(2));
   const mMax=Math.max(...mPnl.map(v=>Math.abs(v)))||1;
 
@@ -1104,7 +1125,7 @@ function renderAnalytics(){
   const effByTicker=tickers.map(tk=>{
     const tc=opts.filter(t=>t.ticker===tk);
     const pl=tc.reduce((s,t)=>s+(t.pnl||0),0);
-    const cap=tc.reduce((s,t)=>s+t.strike*t.contracts*100,0);
+    const cap=tc.reduce((s,t)=>s+collateral(t),0);
     const pe=tc.reduce((s,t)=>s+t.totalCredit,0);
     const peff=pe>0?+(pl/pe*100).toFixed(1):0; // premium efficiency % per ticker
     const capEf=cap>0?+(pl/cap*100).toFixed(2):0;
@@ -1125,6 +1146,26 @@ function renderAnalytics(){
   const outKeys=['Expired','Closed','Assigned','Sold'].filter(k=>outcomes[k]>0);
   const outTotal=outKeys.reduce((s,k)=>s+(outcomes[k]||0),0)||1;
   const outColors=[{k:'Expired',c:'var(--pos)'},{k:'Closed',c:'var(--accent)'},{k:'Assigned',c:'var(--warn)'},{k:'Sold',c:'var(--neg)'}];
+
+  // Return on collateral over time: net P&L of option trades closed each month ÷
+  // the collateral those trades tied up; the line is the running all-time ratio
+  const rocByMo={};
+  opts.forEach(t=>{
+    if(!t.closedDate)return;const c=collateral(t);if(!(c>0))return;
+    const r=rocByMo[t.closedDate.slice(0,7)]||(rocByMo[t.closedDate.slice(0,7)]={net:0,col:0,n:0});
+    r.net+=t.pnlNet!=null?t.pnlNet:netPnl(t)||0;r.col+=c;r.n++;
+  });
+  let rocCumNet=0,rocCumCol=0;
+  const rocSeries=Object.keys(rocByMo).sort().map(mo=>{
+    const r=rocByMo[mo];rocCumNet+=r.net;rocCumCol+=r.col;
+    return{mo,roc:r.net/r.col*100,cum:rocCumNet/rocCumCol*100,net:r.net,col:r.col,n:r.n};
+  });
+  const rocShown=rocSeries.slice(-12);
+  const rocAll=rocCumCol>0?rocCumNet/rocCumCol*100:null;
+  const rocThisMo=rocByMo[curMonAna]?rocByMo[curMonAna].net/rocByMo[curMonAna].col*100:null;
+  const rocBest=rocSeries.reduce((b,x)=>!b||x.roc>b.roc?x:b,null);
+  const rocPct=v=>v==null?'—':(v>=0?'+':'')+v.toFixed(2)+'%';
+  const rocCol=v=>v==null?'var(--ink3)':v>=0?'var(--pos)':'var(--neg)';
 
   // P&L calendar heatmap data
   if(!_calMo){const n=new Date();_calMo=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`;}
@@ -1218,14 +1259,32 @@ function renderAnalytics(){
     </div>
   </div>
 
+  <!-- 1b. Return on collateral over time -->
+  <div class="card" style="margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+      <div class="card-title" style="margin-bottom:0">Return on collateral</div>
+      <span style="font-size:9px;font-weight:700;color:var(--ink3);letter-spacing:.8px">LAST ${rocShown.length||0} MONTHS</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
+      ${_effStatTile('This month',rocPct(rocThisMo),'net P&L / collateral',rocCol(rocThisMo))}
+      ${_effStatTile('All time',rocPct(rocAll),rocCumCol>0?'on $'+rocCumCol.toLocaleString('en-US',{maximumFractionDigits:0}):'no closed options',rocCol(rocAll))}
+      ${_effStatTile('Best month',rocPct(rocBest?rocBest.roc:null),rocBest?new Date(rocBest.mo+'-01').toLocaleString('default',{month:'short',year:'2-digit'}):'—',rocCol(rocBest?rocBest.roc:null))}
+    </div>
+    ${rocShown.length?`<div style="height:120px"><canvas id="c-roc"></canvas></div>
+    <div class="legend" style="margin:6px 0 0">
+      <span style="font-size:9px;color:var(--ink3)"><span class="legend-dot" style="background:var(--pos)"></span>monthly ROC</span>
+      <span style="font-size:9px;color:var(--ink3)"><span class="legend-dot" style="background:${C.blue}"></span>cumulative ROC</span>
+    </div>`:'<div class="empty" style="font-size:11px">Close an option trade to start tracking ROC</div>'}
+  </div>
+
   <!-- 2. Monthly net P&L bar chart -->
   <div class="card" style="margin-bottom:12px">
     <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
       <div class="card-title" style="margin-bottom:0">Monthly net P&amp;L</div>
-      <span style="font-size:9px;font-weight:700;color:var(--ink3);letter-spacing:.8px">LAST 6 MONTHS</span>
+      <div style="display:flex;gap:3px">${['6M','12M','ALL'].map(r=>`<button class="range-btn${_moRange===r?' active':''}" onclick="setMoRange('${r}')">${r}</button>`).join('')}</div>
     </div>
-    <div style="display:flex;align-items:flex-end;gap:6px;height:110px;padding-top:14px">
-      ${months.length?months.map(mo=>{const v=mm[mo]||0;const h=Math.abs(v)/mMax*70;const pos=v>=0;const col=pos?'var(--pos)':'var(--neg)';const lbl=pos?'+'+Math.round(v):''+Math.round(v);const mshort=new Date(mo+'-01').toLocaleString('default',{month:'short'});return`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
+    <div id="mo-bars" style="display:flex;align-items:flex-end;gap:6px;height:110px;padding-top:14px;overflow-x:auto;-webkit-overflow-scrolling:touch">
+      ${months.length?months.map(mo=>{const v=mm[mo]||0;const h=Math.abs(v)/mMax*70;const pos=v>=0;const col=pos?'var(--pos)':'var(--neg)';const lbl=pos?'+'+Math.round(v):''+Math.round(v);const mshort=new Date(mo+'-01').toLocaleString('default',{month:'short'})+(months.length>12&&mo.endsWith('-01')?' '+mo.slice(2,4):'');return`<div style="flex:1;min-width:${months.length>6?'40px':'0'};display:flex;flex-direction:column;align-items:center;gap:3px">
           <span class="mono" style="font-size:10px;color:${col};white-space:nowrap">${lbl}</span>
           <div style="width:78%;height:${Math.max(2,h)}px;background:${col};border-radius:3px;${pos?'margin-top:auto':'margin-top:0'}"></div>
           <span style="font-size:9px;color:var(--ink3);font-family:'JetBrains Mono',monospace">${mshort}</span>
@@ -1317,6 +1376,27 @@ function renderAnalytics(){
     </div>
   </div>
   `;
+
+  // Monthly P&L strip scrolls; start at the most recent month
+  const moBars=document.getElementById('mo-bars');if(moBars)moBars.scrollLeft=moBars.scrollWidth;
+
+  // Chart.js: monthly ROC bars + cumulative ROC line, one % axis
+  dc('roc');
+  if(rocShown.length){
+    const rocLbls=rocShown.map(x=>new Date(x.mo+'-01').toLocaleString('default',{month:'short'}));
+    _charts['roc']=new Chart(document.getElementById('c-roc'),{
+      data:{labels:rocLbls,datasets:[
+        {type:'line',data:rocShown.map(x=>+x.cum.toFixed(2)),borderColor:C.blue,borderWidth:2,tension:.3,pointRadius:2,pointBackgroundColor:C.blue,order:0},
+        {type:'bar',data:rocShown.map(x=>+x.roc.toFixed(2)),backgroundColor:rocShown.map(x=>x.roc>=0?C.pos+'99':C.neg+'99'),borderColor:rocShown.map(x=>x.roc>=0?C.pos:C.neg),borderWidth:1,borderRadius:3,order:1}
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{
+        title:items=>{const x=rocShown[items[0].dataIndex];return new Date(x.mo+'-01').toLocaleString('default',{month:'long',year:'numeric'});},
+        label:ctx=>{const x=rocShown[ctx.dataIndex];return ctx.dataset.type==='bar'
+          ?`ROC ${rocPct(x.roc)} · ${fmtSgn(x.net,0)} on $${x.col.toLocaleString('en-US',{maximumFractionDigits:0})} (${x.n} trade${x.n===1?'':'s'})`
+          :`Cumulative ${rocPct(x.cum)}`;}
+      }}},scales:{x:{ticks:{color:C.text,font:{size:10}},grid:{display:false}},y:{ticks:{color:C.text,font:{size:9},callback:v=>v+'%'},grid:{color:C.grid}}}}
+    });
+  }
 
   // Chart.js: cumulative P&L area chart
   dc('ana-pnl');
@@ -1424,7 +1504,13 @@ function updateLogCalc(){
   // Stock Sale stores premium per share with no ×100 contract multiplier
   const totalPremium=type==='Stock Sale'?+(premium*contracts).toFixed(2):+(premium*contracts*100).toFixed(2);
   // Capital base: cash secured for puts, stock value covering calls — matches capEff()
-  const collateral=type!=='Stock Sale'?+(strike*contracts*100).toFixed(2):0;
+  let collateral=type!=='Stock Sale'?+(strike*contracts*100).toFixed(2):0;
+  let collatLbl='Collateral';
+  if(type==='CC'||type==='PMCC'){
+    const tk=(document.getElementById('lf-ticker')?.value||'').trim().toUpperCase();
+    const lot=state.trades.find(s=>s.type==='Stock'&&s.status==='open'&&s.ticker===tk&&s.strike>0);
+    if(lot){collateral=+(lot.strike*contracts*100).toFixed(2);collatLbl='Collateral (cost basis)';}
+  }
   const yieldPct=collateral>0?+((totalPremium/collateral)*100).toFixed(2):null;
   const annPct=yieldPct!=null&&dte>0?+(yieldPct*(365/dte)).toFixed(1):null;
 
@@ -1434,7 +1520,7 @@ function updateLogCalc(){
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--border)">
       ${cell('Premium',totalPremium?'$'+totalPremium.toFixed(2):'—','var(--pos)')}
-      ${cell('Collateral',collateral?'$'+collateral.toLocaleString('en-US',{maximumFractionDigits:0}):'—','')}
+      ${cell(collatLbl,collateral?'$'+collateral.toLocaleString('en-US',{maximumFractionDigits:0}):'—','')}
       ${cell('Yield',yieldPct!=null?yieldPct+'%':'—','var(--accent)')}
       ${cell('Annualised',annPct!=null?annPct+'%':'—','var(--accent)')}
     </div>
